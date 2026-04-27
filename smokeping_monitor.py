@@ -93,12 +93,15 @@ class Config:
 
     def _apply_env_overrides(self):
         """Override sensitive values from environment variables."""
-        env_token = os.environ.get("SMOKE_TG_TOKEN")
-        env_chat  = os.environ.get("SMOKE_TG_CHAT_ID")
+        env_token  = os.environ.get("SMOKE_TG_TOKEN")
+        env_chat   = os.environ.get("SMOKE_TG_CHAT_ID")
+        env_thread = os.environ.get("SMOKE_TG_THREAD_ID")
         if env_token:
             self._raw.setdefault("telegram", {})["bot_token"] = env_token
         if env_chat:
             self._raw.setdefault("telegram", {})["chat_id"] = env_chat
+        if env_thread:
+            self._raw.setdefault("telegram", {})["message_thread_id"] = int(env_thread)
 
     def _validate(self):
         """Validate all required configuration fields."""
@@ -155,6 +158,12 @@ class Config:
     @property
     def telegram_chat_id(self) -> str:
         return str(self._raw["telegram"]["chat_id"])
+
+    @property
+    def telegram_thread_id(self) -> Optional[int]:
+        """Telegram message_thread_id for group topics. None = General/default."""
+        val = self._raw.get("telegram", {}).get("message_thread_id")
+        return int(val) if val is not None else None
 
     @property
     def rrd_base_path(self) -> str:
@@ -580,9 +589,11 @@ class TelegramNotifier:
     MAX_CAPTION = 1024  # Telegram caption limit
 
     def __init__(self, token: str, chat_id: str,
+                 thread_id: Optional[int] = None,
                  max_retries: int = 3, rate_limit: int = 20):
         self.token       = token
         self.chat_id     = chat_id
+        self.thread_id   = thread_id
         self.max_retries = max_retries
         self.rate_limit  = rate_limit
         self._send_times: List[float] = []
@@ -610,13 +621,16 @@ class TelegramNotifier:
 
         for attempt in range(1, self.max_retries + 1):
             try:
+                payload = {
+                    "chat_id":    self.chat_id,
+                    "text":       text,
+                    "parse_mode": "HTML",
+                }
+                if self.thread_id is not None:
+                    payload["message_thread_id"] = self.thread_id
                 r = requests.post(
                     f"{self._base_url}/sendMessage",
-                    json={
-                        "chat_id":    self.chat_id,
-                        "text":       text,
-                        "parse_mode": "HTML",
-                    },
+                    json=payload,
                     timeout=10,
                 )
                 r.raise_for_status()
@@ -643,14 +657,17 @@ class TelegramNotifier:
 
         for attempt in range(1, self.max_retries + 1):
             try:
+                form_data = {
+                    "chat_id":    self.chat_id,
+                    "caption":    caption,
+                    "parse_mode": "HTML",
+                }
+                if self.thread_id is not None:
+                    form_data["message_thread_id"] = self.thread_id
                 with open(photo_path, "rb") as photo_file:
                     r = requests.post(
                         f"{self._base_url}/sendPhoto",
-                        data={
-                            "chat_id":    self.chat_id,
-                            "caption":    caption,
-                            "parse_mode": "HTML",
-                        },
+                        data=form_data,
                         files={"photo": photo_file},
                         timeout=30,
                     )
@@ -857,6 +874,7 @@ class SmokePingMonitor:
         self.notifier = TelegramNotifier(
             config.telegram_token,
             config.telegram_chat_id,
+            thread_id=config.telegram_thread_id,
             rate_limit=config.rate_limit_per_minute,
         )
         self.grapher   = GraphGenerator(config)
@@ -1109,7 +1127,10 @@ def main():
 
     # --test mode
     if args.test:
-        notifier = TelegramNotifier(config.telegram_token, config.telegram_chat_id)
+        notifier = TelegramNotifier(
+            config.telegram_token, config.telegram_chat_id,
+            thread_id=config.telegram_thread_id,
+        )
         if notifier.test_connection():
             notifier.send_message(
                 f"✅ <b>{APP_NAME} v{VERSION}</b>\n"

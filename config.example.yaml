@@ -10,6 +10,14 @@
 telegram:
   bot_token: "YOUR_BOT_TOKEN"       # dari @BotFather
   chat_id: "YOUR_CHAT_ID"           # user/group/channel ID
+  # message_thread_id: 123          # (opsional) ID thread/topic di grup
+                                     # Untuk grup dengan Topics enabled:
+                                     #   1. Buka topic di Telegram Desktop/Web
+                                     #   2. Lihat URL: https://t.me/c/xxxxx/123
+                                     #                                     ^^^
+                                     #   3. Angka terakhir = message_thread_id
+                                     # Kosongkan jika kirim ke General topic atau chat biasa
+                                     # Override via env: SMOKE_TG_THREAD_ID
 
 # ─── SmokePing Settings ──────────────────────────────────────────
 smokeping:
