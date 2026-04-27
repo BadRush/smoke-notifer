@@ -104,6 +104,131 @@ export SMOKE_TG_CHAT_ID="-1001234567890"
 
 ---
 
+## 📡 Menambahkan Link Target
+
+smoke-notifier **TIDAK** auto-detect semua target SmokePing.
+Kamu harus **define manual** link mana saja yang mau di-monitor dan alert-nya.
+Ini by design karena setiap link punya threshold berbeda.
+
+### Step 1: Cari File RRD SmokePing
+
+```bash
+# List semua file .rrd yang ada
+find /var/lib/smokeping -name "*.rrd" | sort
+
+# Contoh output:
+# /var/lib/smokeping/Backbone/Core01.rrd
+# /var/lib/smokeping/Backbone/PWT-JKT.rrd
+# /var/lib/smokeping/Backbone/PWT-SMG.rrd
+# /var/lib/smokeping/Upstream/BiznetA.rrd
+# /var/lib/smokeping/Upstream/TelkomA.rrd
+# /var/lib/smokeping/Customer/ClientABC.rrd
+```
+
+> **Tip:** Struktur folder di RRD mengikuti hierarki target di `Targets` config SmokePing.
+> Misal target `+ Backbone` → `++ PWT-JKT` menjadi `/var/lib/smokeping/Backbone/PWT-JKT.rrd`
+
+### Step 2: Cek Data RRD (opsional)
+
+Sebelum menambahkan, cek dulu data RTT normal link tersebut:
+
+```bash
+# Cek data 5 menit terakhir
+rrdtool fetch /var/lib/smokeping/Backbone/PWT-JKT.rrd AVERAGE --start -300
+
+# Output contoh:
+#            median         loss    ping1    ping2 ...
+# 1745789400: 3.456e-03  0.000e+00  2.1e-03  3.0e-03 ...
+#              ↑ 3.456ms     ↑ 0 loss
+
+# Cek statistik 24 jam terakhir untuk tentukan threshold
+rrdtool graph /dev/null \
+  --start -24h \
+  DEF:m=/var/lib/smokeping/Backbone/PWT-JKT.rrd:median:AVERAGE \
+  CDEF:ms=m,1000,* \
+  VDEF:avg=ms,AVERAGE \
+  VDEF:max=ms,MAXIMUM \
+  PRINT:avg:"Avg RTT\: %6.2lf ms" \
+  PRINT:max:"Max RTT\: %6.2lf ms" 2>&1 | tail -2
+```
+
+### Step 3: Tentukan Threshold
+
+Gunakan panduan berikut untuk menentukan threshold:
+
+| Jenis Link | warn_rtt | crit_rtt | warn_loss | crit_loss | Catatan |
+|------------|----------|----------|-----------|-----------|---------|
+| **Backbone internal** | 3-5 ms | 10-15 ms | 1-2% | 5-10% | Harus sangat ketat |
+| **Upstream ISP lokal** | 10-30 ms | 50-80 ms | 3-5% | 15-20% | Tergantung SLA ISP |
+| **Upstream internasional** | 50-100 ms | 150-200 ms | 5% | 20% | RTT tinggi itu normal |
+| **VPN / tunnel** | 20-50 ms | 80-150 ms | 3-5% | 15% | Overhead enkripsi |
+| **Customer link** | 5-15 ms | 30-50 ms | 2-3% | 10% | Sesuaikan SLA |
+
+> **Rule of thumb:** `warn_rtt` = 2× RTT normal, `crit_rtt` = 5× RTT normal
+
+### Step 4: Tambahkan ke config.yaml
+
+```bash
+sudo nano /opt/smoke-notifier/config.yaml
+```
+
+Tambahkan di bagian `links:`:
+
+```yaml
+links:
+  # ─── Backbone ──────────────────────────────
+  - label: "Backbone PWT-JKT"
+    rrd_path: "Backbone/PWT-JKT.rrd"     # relatif dari rrd_base_path
+    warn_rtt: 5
+    crit_rtt: 15
+    warn_loss: 2
+    crit_loss: 10
+    num_probes: 20
+
+  - label: "Backbone PWT-SMG"
+    rrd_path: "Backbone/PWT-SMG.rrd"
+    warn_rtt: 5
+    crit_rtt: 15
+    warn_loss: 2
+    crit_loss: 10
+    num_probes: 20
+
+  # ─── Upstream ──────────────────────────────
+  - label: "Upstream Telkom"
+    rrd_path: "Upstream/TelkomA.rrd"
+    warn_rtt: 30
+    crit_rtt: 80
+    warn_loss: 5
+    crit_loss: 20
+    warn_jitter: 10        # opsional
+    crit_jitter: 30        # opsional
+    num_probes: 20
+
+  # ─── Quick-add template (copy-paste) ───────
+  # - label: "NAMA LINK"
+  #   rrd_path: "Folder/NamaFile.rrd"
+  #   warn_rtt: 20
+  #   crit_rtt: 60
+  #   warn_loss: 5
+  #   crit_loss: 20
+  #   num_probes: 20
+```
+
+### Step 5: Restart Service
+
+```bash
+# Validasi config dulu (dry-run)
+python3 /opt/smoke-notifier/smokeping_monitor.py --config /opt/smoke-notifier/config.yaml --dry-run
+
+# Kalau OK, restart service
+sudo systemctl restart smoke-notifier
+
+# Cek log
+journalctl -u smoke-notifier -f
+```
+
+---
+
 ## 🔍 Cara Kerja
 
 ```
