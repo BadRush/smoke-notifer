@@ -373,7 +373,7 @@ class RRDReader:
             result = subprocess.run(
                 [
                     "rrdtool", "fetch", rrd_file, "AVERAGE",
-                    "--start", "-300", "--end", "now",
+                    "--start", "-900", "--end", "now",
                 ],
                 capture_output=True, text=True, timeout=10,
             )
