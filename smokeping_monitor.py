@@ -21,6 +21,8 @@ import json
 import logging
 import subprocess
 import argparse
+import threading
+import re
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -357,6 +359,36 @@ class StateManager:
             return datetime.now() - datetime.fromisoformat(last_change)
         except (ValueError, TypeError):
             return None
+
+    # ── Maintenance Mode ──────────────────────────────────────────
+    def set_maintenance(self, label: str, duration_sec: int):
+        """Set maintenance window. Use label='_global_' for all."""
+        current = self.get(label) if label != "_global_" else self._state.setdefault("_global_", {})
+        if duration_sec <= 0:
+            current.pop("maintenance_until", None)
+        else:
+            expiry = datetime.now() + timedelta(seconds=duration_sec)
+            current["maintenance_until"] = expiry.isoformat()
+        
+        self._state[label] = current
+        self.save()
+
+    def is_maintenance(self, label: str) -> bool:
+        """Check if link (or global) is actively muted."""
+        for target in ("_global_", label):
+            m_until = self._state.get(target, {}).get("maintenance_until")
+            if m_until:
+                try:
+                    expiry = datetime.fromisoformat(m_until)
+                    if datetime.now() < expiry:
+                        return True
+                    else:
+                        # Auto cleanup expired
+                        self._state[target].pop("maintenance_until")
+                        # self.save() # Optional, can wait for next normal save
+                except (ValueError, TypeError):
+                    pass
+        return False
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -919,6 +951,204 @@ class StatusEvaluator:
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  Command Listener — Telegram Interactive Bot
+# ═══════════════════════════════════════════════════════════════════
+class CommandListener(threading.Thread):
+    def __init__(self, config: Config, state: StateManager, notifier: TelegramNotifier, grapher: GraphGenerator):
+        super().__init__(daemon=True)
+        self.config = config
+        self.state = state
+        self.notifier = notifier
+        self.grapher = grapher
+        self._running = True
+        self._offset = None
+        self._allowed_chats = config.telegram_allowed_chat_ids
+
+    def stop(self):
+        self._running = False
+
+    def run(self):
+        if not self.config.telegram_listen_commands:
+            log.info("Telegram Command Listener is DISABLED in config.")
+            return
+
+        log.info("Telegram Command Listener started.")
+        url = f"{self.notifier._base_url}/getUpdates"
+        
+        while self._running:
+            try:
+                params = {"timeout": 30, "allowed_updates": ["message", "callback_query"]}
+                if self._offset is not None:
+                    params["offset"] = self._offset
+                
+                r = requests.get(url, params=params, timeout=40)
+                if r.status_code == 200:
+                    data = r.json()
+                    if data.get("ok"):
+                        updates = data.get("result", [])
+                        for update in updates:
+                            self._offset = update["update_id"] + 1
+                            self._handle_update(update)
+            except requests.exceptions.RequestException:
+                pass # ignore network timeouts
+            except Exception as e:
+                log.debug(f"getUpdates error: {e}")
+            
+            time.sleep(1)
+
+    def _is_allowed(self, chat_id: str) -> bool:
+        if not self._allowed_chats:
+            return True
+        return str(chat_id) in self._allowed_chats
+
+    def _handle_update(self, update: dict):
+        if "message" in update and "text" in update["message"]:
+            msg = update["message"]
+            chat_id = str(msg["chat_id"])
+            if not self._is_allowed(chat_id):
+                return
+            
+            text = msg["text"].strip()
+            self._handle_command(text, chat_id, msg.get("message_thread_id"))
+
+        elif "callback_query" in update:
+            cb = update["callback_query"]
+            chat_id = str(cb["message"]["chat_id"])
+            if not self._is_allowed(chat_id):
+                return
+            
+            self._handle_callback(cb)
+
+    def _handle_command(self, text: str, chat_id: str, thread_id: Optional[int]):
+        parts = text.split()
+        if not parts:
+            return
+        
+        cmd = parts[0].split('@')[0].lower()
+
+        if cmd == "/smoke-status":
+            self._cmd_status(chat_id, thread_id)
+        elif cmd == "/smoke-maint":
+            self._cmd_maint(parts[1:], chat_id, thread_id)
+        elif cmd == "/smoke":
+            self._cmd_graph(parts[1:], chat_id, thread_id)
+
+    def _cmd_status(self, chat_id: str, thread_id: Optional[int]):
+        states = self.state.get_all()
+        links = self.config.links
+        
+        ok_count = 0
+        lines = []
+        for l in links:
+            lbl = l["label"]
+            st = states.get(lbl, {}).get("status", STATUS_UNKNOWN)
+            if st == STATUS_OK:
+                ok_count += 1
+            else:
+                emoji = STATUS_EMOJI.get(st, "⚪")
+                m_str = " 🔇(Muted)" if self.state.is_maintenance(lbl) else ""
+                lines.append(f"{emoji} {lbl}: <b>{st}</b>{m_str}")
+        
+        gl_mute = "\n🔇 <b>GLOBAL MAINTENANCE ACTIVE</b>\n" if self.state.is_maintenance("_global_") else ""
+        
+        msg = f"📊 <b>Smart Status Summary</b>\n{gl_mute}─────────────────────\n"
+        if lines:
+            msg += "<b>⚠️ PRIORITAS / NON-OK:</b>\n" + "\n".join(lines) + "\n\n"
+        msg += f"✅ <b>{ok_count} Links OK</b>"
+        
+        self.notifier.send_message(msg, chat_id=chat_id, thread_id=thread_id)
+
+    def _parse_duration(self, d_str: str) -> Optional[int]:
+        match = re.match(r"^(\d+)([mhd])$", d_str.lower())
+        if not match:
+            return None
+        val = int(match.group(1))
+        unit = match.group(2)
+        if unit == "m": return val * 60
+        if unit == "h": return val * 3600
+        if unit == "d": return val * 86400
+        return None
+
+    def _cmd_maint(self, args: List[str], chat_id: str, thread_id: Optional[int]):
+        if not args:
+            self.notifier.send_message("❌ Format: `/smoke-maint <durasi> [link]`\nContoh: `/smoke-maint 3h`\nMati: `/smoke-maint off`", chat_id=chat_id, thread_id=thread_id)
+            return
+
+        time_str = args[0]
+        label = " ".join(args[1:]) if len(args) > 1 else "_global_"
+
+        if time_str.lower() == "off":
+            self.state.set_maintenance(label, 0)
+            target = "Global" if label == "_global_" else f"Link '{label}'"
+            self.notifier.send_message(f"🔊 {target} maintenance dimatikan.", chat_id=chat_id, thread_id=thread_id)
+            return
+
+        sec = self._parse_duration(time_str)
+        if not sec:
+            self.notifier.send_message("❌ Durasi tidak valid. Gunakan m/h/d (contoh: 30m, 1h).", chat_id=chat_id, thread_id=thread_id)
+            return
+
+        self.state.set_maintenance(label, sec)
+        target = "Global" if label == "_global_" else f"Link '{label}'"
+        self.notifier.send_message(f"🔇 {target} disenyapkan selama {time_str}.", chat_id=chat_id, thread_id=thread_id)
+
+    def _cmd_graph(self, args: List[str], chat_id: str, thread_id: Optional[int]):
+        if len(args) < 2:
+            self.notifier.send_message("❌ Format: `/smoke <durasi> <Nama Link>`\nContoh: `/smoke 3h FS-TGL-YK`", chat_id=chat_id, thread_id=thread_id)
+            return
+        
+        dur = args[0]
+        label = " ".join(args[1:])
+        
+        link_cfg = next((l for l in self.config.links if l["label"] == label), None)
+        if not link_cfg:
+            self.notifier.send_message(f"❌ Link '{label}' tidak ditemukan di config.", chat_id=chat_id, thread_id=thread_id)
+            return
+        
+        temp_cfg = link_cfg.copy()
+        gpath = self.grapher.generate(temp_cfg, duration=dur)
+        if gpath:
+            self.notifier.send_photo(gpath, caption=f"📈 Graph {dur} untuk <b>{label}</b>", chat_id=chat_id, thread_id=thread_id)
+            self.grapher.cleanup(gpath)
+        else:
+            self.notifier.send_message("❌ Gagal membuat grafik.", chat_id=chat_id, thread_id=thread_id)
+
+    def _handle_callback(self, cb: dict):
+        cb_id = cb["id"]
+        data = cb.get("data", "")
+        msg = cb.get("message", {})
+        chat_id = str(msg.get("chat_id", ""))
+        msg_id = msg.get("message_id")
+
+        if data == "dismiss":
+            requests.post(f"{self.notifier._base_url}/answerCallbackQuery", json={"callback_query_id": cb_id}, timeout=5)
+            requests.post(f"{self.notifier._base_url}/editMessageReplyMarkup", json={"chat_id": chat_id, "message_id": msg_id, "reply_markup": {"inline_keyboard": []}}, timeout=5)
+            return
+
+        parts = data.split(":", 2)
+        if len(parts) >= 3:
+            action = parts[0]
+            val = parts[1]
+            short_lbl = parts[2]
+            
+            link_cfg = next((l for l in self.config.links if l["label"].startswith(short_lbl)), None)
+            if not link_cfg:
+                requests.post(f"{self.notifier._base_url}/answerCallbackQuery", json={"callback_query_id": cb_id, "text": "❌ Link tidak dikenali", "show_alert": True}, timeout=5)
+                return
+            
+            label = link_cfg["label"]
+
+            if action == "m":
+                sec = self._parse_duration(val)
+                if sec:
+                    self.state.set_maintenance(label, sec)
+                    requests.post(f"{self.notifier._base_url}/answerCallbackQuery", json={"callback_query_id": cb_id, "text": f"🔇 {label} muted {val}"}, timeout=5)
+            
+            elif action == "g":
+                requests.post(f"{self.notifier._base_url}/answerCallbackQuery", json={"callback_query_id": cb_id}, timeout=5)
+                self._cmd_graph([val, label], chat_id, None)
+
+# ═══════════════════════════════════════════════════════════════════
 #  Main Monitor
 # ═══════════════════════════════════════════════════════════════════
 class SmokePingMonitor:
@@ -957,6 +1187,12 @@ class SmokePingMonitor:
         prev_state  = self.state.get(label)
         prev_status = prev_state.get("status", STATUS_UNKNOWN)
         now_iso     = datetime.now().isoformat()
+
+        # Maintenance Check (silent drop)
+        if self.state.is_maintenance(label):
+            # Update state with same status to avoid alert flood after maintenance ends
+            self.state.update(label, status, now_iso)
+            return
 
         # Logging
         if data and data.get("median_rtt") is not None:
@@ -1123,6 +1359,12 @@ class SmokePingMonitor:
                 log.error("Cannot connect to Telegram — check bot_token in config")
                 sys.exit(1)
 
+        # ── Listener ──────────────────────────────────────────────
+        listener = None
+        if not self.dry_run and self.config.telegram_listen_commands:
+            listener = CommandListener(self.config, self.state, self.notifier, self.grapher)
+            listener.start()
+
         # ── Loop ──────────────────────────────────────────────────
         while self._running:
             try:
@@ -1143,6 +1385,10 @@ class SmokePingMonitor:
                 time.sleep(1)
 
         # Graceful exit
+        if listener:
+            listener.stop()
+            listener.join(timeout=2)
+        
         self.state.save()
         log.info(f"{APP_NAME} stopped gracefully")
 
