@@ -127,9 +127,9 @@ links:
 
 ## 🤖 Interactive NOC Commands (v1.1.0)
 Telegram bot bisa merespons chat di grup jika `listen_commands: true` diaktifkan:
-*   `/smoke-status` — Menampilkan summary dari semua link, mendahulukan link yang DOWN atau WARN ke atas.
-*   `/smoke-maint <10m/2h/1d> <NAMA-LINK>` — Mute (menyembunyikan alert) link spesifik selama durasi perbaikan. Jika `<NAMA-LINK>` dikosongkan, ini menjadi mute Global.
-*   `/smoke-maint off` — Membatalkan mode mute/maintenance.
+*   `/smokestatus` — Menampilkan summary dari semua link, mendahulukan link yang DOWN atau WARN ke atas.
+*   `/smokemaint <10m/2h/1d> <NAMA-LINK>` — Mute (menyembunyikan alert) link spesifik selama durasi perbaikan. Jika `<NAMA-LINK>` dikosongkan, ini menjadi mute Global.
+*   `/smokemaint off` — Membatalkan mode mute/maintenance.
 *   `/smoke 6h <NAMA-LINK>` — Bot akan mengirimkan grafik secara instan ke grup.
 
 Pesan alert `DOWN`/`WARN` juga dilengkapi dengan **[ Tombol Klik ]** di panel bawah pesan, sehingga NOC bisa menekan tombol **[ Mute 1h ]** atau **[ Graph 24h ]** langsung tanpa mengetik chat!

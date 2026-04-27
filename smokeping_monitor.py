@@ -1004,7 +1004,7 @@ class CommandListener(threading.Thread):
     def _handle_update(self, update: dict):
         if "message" in update and "text" in update["message"]:
             msg = update["message"]
-            chat_id = str(msg["chat_id"])
+            chat_id = str(msg["chat"]["id"])
             if not self._is_allowed(chat_id):
                 return
             
@@ -1013,7 +1013,7 @@ class CommandListener(threading.Thread):
 
         elif "callback_query" in update:
             cb = update["callback_query"]
-            chat_id = str(cb["message"]["chat_id"])
+            chat_id = str(cb["message"]["chat"]["id"])
             if not self._is_allowed(chat_id):
                 return
             
@@ -1026,9 +1026,9 @@ class CommandListener(threading.Thread):
         
         cmd = parts[0].split('@')[0].lower()
 
-        if cmd == "/smoke-status":
+        if cmd == "/smokestatus":
             self._cmd_status(chat_id, thread_id)
-        elif cmd == "/smoke-maint":
+        elif cmd == "/smokemaint":
             self._cmd_maint(parts[1:], chat_id, thread_id)
         elif cmd == "/smoke":
             self._cmd_graph(parts[1:], chat_id, thread_id)
@@ -1071,7 +1071,7 @@ class CommandListener(threading.Thread):
 
     def _cmd_maint(self, args: List[str], chat_id: str, thread_id: Optional[int]):
         if not args:
-            self.notifier.send_message("❌ Format: `/smoke-maint <durasi> [link]`\nContoh: `/smoke-maint 3h`\nMati: `/smoke-maint off`", chat_id=chat_id, thread_id=thread_id)
+            self.notifier.send_message("❌ Format: `/smokemaint <durasi> [link]`\nContoh: `/smokemaint 3h`\nMati: `/smokemaint off`", chat_id=chat_id, thread_id=thread_id)
             return
 
         time_str = args[0]
