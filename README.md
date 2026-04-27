@@ -67,6 +67,7 @@ Edit `/opt/smoke-notifier/config.yaml`:
 telegram:
   bot_token: "123456:ABC..."    # dari @BotFather
   chat_id: "-1001234567890"     # group/channel ID
+  # message_thread_id: 123     # (opsional) kirim ke thread/topic tertentu
 
 # SmokePing
 smokeping:
@@ -93,6 +94,25 @@ links:
     num_probes: 20
 ```
 
+### Kirim ke Thread/Topic Grup (opsional)
+
+Jika grup Telegram kamu punya **Topics** (thread terpisah), bisa arahkan alert ke topic tertentu:
+
+```yaml
+telegram:
+  bot_token: "123456:ABC..."
+  chat_id: "-1001234567890"
+  message_thread_id: 456       # ← ID topic di grup
+```
+
+**Cara dapat `message_thread_id`:**
+1. Buka grup di **Telegram Desktop** atau **Web**
+2. Klik topic yang diinginkan
+3. Lihat URL: `https://t.me/c/1234567890/456` — angka terakhir (`456`) = thread ID
+4. Atau forward pesan dari topic ke [@RawDataBot](https://t.me/RawDataBot), cari `message_thread_id`
+
+> **Tip:** Kosongkan / hapus `message_thread_id` jika ingin kirim ke **General** topic atau chat biasa (bukan grup dengan Topics).
+
 ### Environment Variables (opsional)
 
 Sensitive values bisa di-override via env var (berguna untuk CI/CD):
@@ -100,6 +120,7 @@ Sensitive values bisa di-override via env var (berguna untuk CI/CD):
 ```bash
 export SMOKE_TG_TOKEN="123456:ABC..."
 export SMOKE_TG_CHAT_ID="-1001234567890"
+export SMOKE_TG_THREAD_ID="456"        # opsional, untuk group topic
 ```
 
 ---
