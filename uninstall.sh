@@ -2,6 +2,7 @@
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║           smoke-notifier — Uninstall Script                     ║
 # ║  Run: sudo bash uninstall.sh                                   ║
+# ║  Version: 1.0.0 | Copyright: (c) 2026 BadRush                  ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 set -euo pipefail

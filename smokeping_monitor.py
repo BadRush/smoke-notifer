@@ -9,7 +9,7 @@ and sends alerts with PNG graphs to Telegram.
 Usage:
     python3 smokeping_monitor.py [--config CONFIG] [--dry-run] [--test]
 
-Author : smoke-notifier project
+Author : BadRush
 License: MIT
 """
 

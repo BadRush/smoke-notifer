@@ -1,6 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║           smoke-notifier — Configuration File                  ║
 # ║  Copy file ini ke config.yaml lalu edit sesuai kebutuhan       ║
+# ║  Version: 1.0.0 | Copyright: (c) 2026 BadRush                  ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 # ─── Telegram Bot ─────────────────────────────────────────────────

@@ -418,4 +418,6 @@ systemctl restart smoke-notifier
 
 ## 📜 License
 
-MIT
+[MIT License](LICENSE)
+
+Copyright (c) 2026 BadRush
