@@ -1,0 +1,31 @@
+# Config with secrets
+config.yaml
+
+# State & runtime
+state.json
+*.log
+*.log.*
+
+# Graph temp
+*.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# test file
+cek

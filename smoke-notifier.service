@@ -1,0 +1,37 @@
+[Unit]
+Description=smoke-notifier — SmokePing RRD Monitor / Telegram Alert
+Documentation=https://github.com/your-repo/smoke-notifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+WorkingDirectory=/opt/smoke-notifier
+ExecStart=/usr/bin/python3 /opt/smoke-notifier/smokeping_monitor.py --config /opt/smoke-notifier/config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+# Environment (optional override)
+# EnvironmentFile=/opt/smoke-notifier/.env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smoke-notifier
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/smoke-notifier /tmp/smoke-notifier
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

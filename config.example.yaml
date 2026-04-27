@@ -1,0 +1,104 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║           smoke-notifier — Configuration File                  ║
+# ║  Copy file ini ke config.yaml lalu edit sesuai kebutuhan       ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
+# ─── Telegram Bot ─────────────────────────────────────────────────
+# Bisa juga di-override via environment variable:
+#   SMOKE_TG_TOKEN   → override bot_token
+#   SMOKE_TG_CHAT_ID → override chat_id
+telegram:
+  bot_token: "YOUR_BOT_TOKEN"       # dari @BotFather
+  chat_id: "YOUR_CHAT_ID"           # user/group/channel ID
+
+# ─── SmokePing Settings ──────────────────────────────────────────
+smokeping:
+  rrd_base_path: "/var/lib/smokeping"   # path root file .rrd
+  check_interval: 60                     # polling interval (detik)
+  num_probes: 20                         # default jumlah probe
+
+# ─── Graph Settings ──────────────────────────────────────────────
+# Graph PNG di-generate saat alert, dikirim bareng notif
+graph:
+  enabled: true
+  duration: "3h"          # durasi graph alert: 1h, 3h, 6h, 12h, 24h
+  width: 800              # lebar PNG (pixel)
+  height: 250             # tinggi PNG (pixel)
+  temp_dir: "/tmp/smoke-notifier"   # folder temp untuk PNG
+
+# ─── Alert Settings ──────────────────────────────────────────────
+alerts:
+  flapping:
+    cooldown: 300         # detik — jeda minimum antar alert per link
+    max_changes: 4        # jumlah state change dalam window = flapping
+    window: 600           # detik — window untuk deteksi flapping
+
+  rate_limit:
+    max_per_minute: 20    # max pesan Telegram per menit
+
+# ─── Daily Heartbeat ─────────────────────────────────────────────
+# Summary harian agar tahu monitor masih hidup
+heartbeat:
+  enabled: true
+  time: "07:00"           # jam kirim heartbeat (HH:MM, format 24h)
+  graph_duration: "24h"   # durasi graph untuk heartbeat
+
+# ─── Logging ──────────────────────────────────────────────────────
+logging:
+  file: "/opt/smoke-notifier/smoke-notifier.log"
+  max_size_mb: 5          # max ukuran file log sebelum rotate
+  backup_count: 3         # jumlah backup log yang disimpan
+
+# ─── State Persistence ───────────────────────────────────────────
+state_file: "/opt/smoke-notifier/state.json"
+
+# ─── Link Definitions ────────────────────────────────────────────
+# Definisi setiap link yang dipantau.
+# Threshold per-link:
+#   warn_rtt    : RTT (ms) >= ini → WARNING
+#   crit_rtt    : RTT (ms) >= ini → CRITICAL
+#   warn_loss   : Packet loss (%) >= ini → WARNING
+#   crit_loss   : Packet loss (%) >= ini → CRITICAL
+#   warn_jitter : Jitter/SD (ms) >= ini → WARNING  (opsional)
+#   crit_jitter : Jitter/SD (ms) >= ini → CRITICAL (opsional)
+#   num_probes  : jumlah probe (override default smokeping.num_probes)
+#
+# rrd_path relatif dari smokeping.rrd_base_path
+
+links:
+  - label: "Upstream-A (Telkom)"
+    rrd_path: "Upstream/TelkomA.rrd"
+    warn_rtt: 30
+    crit_rtt: 80
+    warn_loss: 5
+    crit_loss: 20
+    warn_jitter: 10
+    crit_jitter: 30
+    num_probes: 20
+
+  - label: "Upstream-B (Biznet)"
+    rrd_path: "Upstream/BiznetB.rrd"
+    warn_rtt: 20
+    crit_rtt: 60
+    warn_loss: 5
+    crit_loss: 20
+    num_probes: 20
+
+  - label: "Backbone PWT-JKT"
+    rrd_path: "Backbone/PWT-JKT.rrd"
+    warn_rtt: 5
+    crit_rtt: 15
+    warn_loss: 2
+    crit_loss: 10
+    warn_jitter: 3
+    crit_jitter: 8
+    num_probes: 20
+
+  # ─── Tambah link lain di bawah sini ───
+  # - label: "Nama Link"
+  #   rrd_path: "Folder/NamaFile.rrd"
+  #   warn_rtt: 10
+  #   crit_rtt: 50
+  #   warn_loss: 5
+  #   crit_loss: 20
+  #   num_probes: 20
