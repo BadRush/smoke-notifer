@@ -166,6 +166,16 @@ class Config:
         return int(val) if val is not None else None
 
     @property
+    def telegram_listen_commands(self) -> bool:
+        return self._raw.get("telegram", {}).get("listen_commands", True)
+
+    @property
+    def telegram_allowed_chat_ids(self) -> List[str]:
+        raw_ids = self._raw.get("telegram", {}).get("allowed_chat_ids") or []
+        # Convert to list of strings
+        return [str(chat_id) for chat_id in raw_ids]
+
+    @property
     def rrd_base_path(self) -> str:
         return self._raw.get("smokeping", {}).get("rrd_base_path", "/var/lib/smokeping")
 
@@ -617,20 +627,32 @@ class TelegramNotifier:
         return text[: limit - 20] + "\n\n<i>…truncated</i>"
 
     # ── Send methods ──────────────────────────────────────────────
-    def send_message(self, text: str) -> bool:
+    def send_message(
+        self,
+        text: str,
+        chat_id: Optional[str] = None,
+        thread_id: Optional[int] = None,
+        reply_markup: Optional[dict] = None
+    ) -> bool:
         if not self._rate_ok():
             log.warning("Telegram rate limit hit — message queued/skipped")
             return False
 
+        target_chat = chat_id or self.chat_id
+        target_thread = thread_id if thread_id is not None else self.thread_id
+
         for attempt in range(1, self.max_retries + 1):
             try:
                 payload = {
-                    "chat_id":    self.chat_id,
+                    "chat_id":    target_chat,
                     "text":       text,
                     "parse_mode": "HTML",
                 }
-                if self.thread_id is not None:
-                    payload["message_thread_id"] = self.thread_id
+                if target_thread is not None:
+                    payload["message_thread_id"] = target_thread
+                if reply_markup is not None:
+                    payload["reply_markup"] = reply_markup
+
                 r = requests.post(
                     f"{self._base_url}/sendMessage",
                     json=payload,
@@ -651,22 +673,36 @@ class TelegramNotifier:
         log.error("Telegram send_message failed after all retries")
         return False
 
-    def send_photo(self, photo_path: str, caption: str = "") -> bool:
+    def send_photo(
+        self,
+        photo_path: str,
+        caption: str = "",
+        chat_id: Optional[str] = None,
+        thread_id: Optional[int] = None,
+        reply_markup: Optional[dict] = None
+    ) -> bool:
         if not self._rate_ok():
             log.warning("Telegram rate limit hit — photo skipped")
             return False
 
         caption = self._truncate(caption, self.MAX_CAPTION)
+        target_chat = chat_id or self.chat_id
+        target_thread = thread_id if thread_id is not None else self.thread_id
 
         for attempt in range(1, self.max_retries + 1):
             try:
                 form_data = {
-                    "chat_id":    self.chat_id,
+                    "chat_id":    target_chat,
                     "caption":    caption,
                     "parse_mode": "HTML",
                 }
-                if self.thread_id is not None:
-                    form_data["message_thread_id"] = self.thread_id
+                if target_thread is not None:
+                    form_data["message_thread_id"] = target_thread
+                
+                # Optional JSON payload stringified for multipart/form-data
+                if reply_markup is not None:
+                    form_data["reply_markup"] = json.dumps(reply_markup)
+                
                 with open(photo_path, "rb") as photo_file:
                     r = requests.post(
                         f"{self._base_url}/sendPhoto",
@@ -689,11 +725,29 @@ class TelegramNotifier:
         log.error("Telegram photo failed — falling back to text")
         return self.send_message(caption)
 
-    def send_alert(self, message: str, graph_path: Optional[str] = None) -> bool:
+    def send_alert(
+        self,
+        message: str,
+        graph_path: Optional[str] = None,
+        chat_id: Optional[str] = None,
+        thread_id: Optional[int] = None,
+        reply_markup: Optional[dict] = None
+    ) -> bool:
         """Send alert: photo+caption if graph available, text otherwise."""
         if graph_path and os.path.isfile(graph_path):
-            return self.send_photo(graph_path, caption=message)
-        return self.send_message(message)
+            return self.send_photo(
+                graph_path,
+                caption=message,
+                chat_id=chat_id,
+                thread_id=thread_id,
+                reply_markup=reply_markup
+            )
+        return self.send_message(
+            message,
+            chat_id=chat_id,
+            thread_id=thread_id,
+            reply_markup=reply_markup
+        )
 
     def test_connection(self) -> bool:
         """Verify bot token is valid."""
@@ -915,6 +969,26 @@ class SmokePingMonitor:
         else:
             log.info(f"{label:30s} | DOWN | {prev_status} → {status}")
 
+        chat_id = str(link_cfg.get("chat_id")) if link_cfg.get("chat_id") else None
+        thread_id = int(link_cfg.get("message_thread_id")) if link_cfg.get("message_thread_id") else None
+
+        # Build inline keyboard if needed
+        reply_markup = None
+        if self.config.telegram_listen_commands and status in (STATUS_DOWN, STATUS_WARN, STATUS_CRIT):
+            short_lbl = label[:40]
+            reply_markup = {
+                "inline_keyboard": [
+                    [
+                        {"text": "📉 Graph 6h", "callback_data": f"g:6h:{short_lbl}"},
+                        {"text": "📉 Graph 24h", "callback_data": f"g:24h:{short_lbl}"}
+                    ],
+                    [
+                        {"text": "🔇 Mute 1h", "callback_data": f"m:1h:{short_lbl}"},
+                        {"text": "❌ Tutup", "callback_data": "dismiss"}
+                    ]
+                ]
+            }
+
         # ── First run: set initial state ──────────────────────────
         if prev_status == STATUS_UNKNOWN:
             log.info(f"  ↳ Initial state: {status}")
@@ -926,7 +1000,9 @@ class SmokePingMonitor:
                 )
                 if not self.dry_run:
                     graph_path = self.grapher.generate(link_cfg)
-                    self.notifier.send_alert(msg, graph_path)
+                    self.notifier.send_alert(
+                        msg, graph_path, chat_id=chat_id, thread_id=thread_id, reply_markup=reply_markup
+                    )
                     if graph_path:
                         self.grapher.cleanup(graph_path)
                     self.state.record_alert(label, now_iso)
@@ -950,7 +1026,9 @@ class SmokePingMonitor:
                     link_cfg, data, STATUS_FLAPPING, prev_status
                 )
                 if not self.dry_run:
-                    self.notifier.send_message(msg)
+                    self.notifier.send_message(
+                        msg, chat_id=chat_id, thread_id=thread_id
+                    )
                     self.state.record_alert(label, now_iso)
                 self.state.update(label, STATUS_FLAPPING, now_iso)
             return
@@ -974,7 +1052,9 @@ class SmokePingMonitor:
             log.info(f"  [DRY-RUN] Would send:\n{msg}")
         else:
             graph_path = self.grapher.generate(link_cfg)
-            self.notifier.send_alert(msg, graph_path)
+            self.notifier.send_alert(
+                msg, graph_path, chat_id=chat_id, thread_id=thread_id, reply_markup=reply_markup
+            )
             if graph_path:
                 self.grapher.cleanup(graph_path)
             self.state.record_alert(label, now_iso)

@@ -19,6 +19,12 @@ telegram:
                                      #   3. Angka terakhir = message_thread_id
                                      # Kosongkan jika kirim ke General topic atau chat biasa
                                      # Override via env: SMOKE_TG_THREAD_ID
+  
+  # ─── Command Listener (Interactive NOC) ───
+  listen_commands: true             # Aktifkan fitur listener (/smoke-status, tombol inline)
+  allowed_chat_ids:                 # (Opsional) Batasi bot HANYA merespons obrolan dari Chat ID ini.
+    # - "-1001234567"               # Hindari orang luar/iseng menjalankan command bot.
+    # - "123456789"
 
 # ─── SmokePing Settings ──────────────────────────────────────────
 smokeping:
