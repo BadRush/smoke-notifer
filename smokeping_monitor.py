@@ -397,7 +397,8 @@ class RRDReader:
                 if not stripped or ":" not in stripped:
                     continue
                 raw_vals = stripped.split(":")[1].strip().split()
-                if any(v.lower() != "nan" for v in raw_vals):
+                # Use .strip("-") to handle "-nan" values accurately
+                if any(v.lower().strip("-") != "nan" for v in raw_vals):
                     data_rows.append(stripped)
 
             if not data_rows:
@@ -410,7 +411,9 @@ class RRDReader:
             values: Dict[str, Optional[float]] = {}
             for name, val in zip(ds_names, raw_values):
                 try:
-                    values[name] = float(val) if val.lower() != "nan" else None
+                    # Strip leading sign for "nan" detection
+                    is_nan = val.lower().strip("-") == "nan"
+                    values[name] = float(val) if not is_nan else None
                 except ValueError:
                     values[name] = None
 
