@@ -2,7 +2,7 @@
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║           smoke-notifier — Interactive Setup Script             ║
 # ║  Run: sudo bash setup.sh                                       ║
-# ║  Version: 1.0.0 | Copyright: (c) 2026 BadRush                  ║
+# ║  Version: 1.1.0 | Copyright: (c) 2026 BadRush                  ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 set -euo pipefail

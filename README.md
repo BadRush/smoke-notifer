@@ -14,6 +14,8 @@ ke Telegram — lengkap dengan graph PNG 3 jam terakhir.
 |---------|-----------|
 | 📊 **RRD Monitoring** | Baca data SmokePing langsung dari file `.rrd` via `rrdtool` |
 | 🔔 **Multi-level Alert** | OK → WARN → CRIT → DOWN, alert hanya saat status berubah |
+| 🤖 **Interactive Bot** | Fitur NOC! Mendukung command `/smoke-status` & Mute per-link via chat |
+| 🎛️ **Inline Keyboards** | Alert otomatis menyertakan tombol interaktif untuk *Mute* atau *Graph* instan |
 | 📈 **Graph PNG** | Setiap alert disertai graph PNG (default 3 jam terakhir) |
 | 📐 **Jitter Detection** | Monitoring jitter/standard deviation dari probe values |
 | 🟢 **Recovery Alert** | Notif saat link recover + durasi downtime |
@@ -67,7 +69,9 @@ Edit `/opt/smoke-notifier/config.yaml`:
 telegram:
   bot_token: "123456:ABC..."    # dari @BotFather
   chat_id: "-1001234567890"     # group/channel ID
-  # message_thread_id: 123     # (opsional) kirim ke thread/topic tertentu
+  listen_commands: true         # Aktifkan fitur /smoke-status dll
+  allowed_chat_ids:
+    - "-1001234567890"          # (Wajib demi keamanan) ID yang boleh pakai command bot
 
 # SmokePing
 smokeping:
@@ -102,7 +106,13 @@ Jika grup Telegram kamu punya **Topics** (thread terpisah), bisa arahkan alert k
 telegram:
   bot_token: "123456:ABC..."
   chat_id: "-1001234567890"
-  message_thread_id: 456       # ← ID topic di grup
+  message_thread_id: 456       # ← ID topic global default
+
+links:
+  - label: "FS-TGL-YK"
+    rrd_path: "Backbone/FS-TGL.rrd"
+    chat_id: "-1009876543210"        # (opsional) Override kirim ke grup/user lain
+    message_thread_id: 999           # (opsional) Override kirim ke thread lain
 ```
 
 **Cara dapat `message_thread_id`:**
@@ -112,6 +122,18 @@ telegram:
 4. Atau forward pesan dari topic ke [@RawDataBot](https://t.me/RawDataBot), cari `message_thread_id`
 
 > **Tip:** Kosongkan / hapus `message_thread_id` jika ingin kirim ke **General** topic atau chat biasa (bukan grup dengan Topics).
+
+---
+
+## 🤖 Interactive NOC Commands (v1.1.0)
+Telegram bot bisa merespons chat di grup jika `listen_commands: true` diaktifkan:
+*   `/smoke-status` — Menampilkan summary dari semua link, mendahulukan link yang DOWN atau WARN ke atas.
+*   `/smoke-maint <10m/2h/1d> <NAMA-LINK>` — Mute (menyembunyikan alert) link spesifik selama durasi perbaikan. Jika `<NAMA-LINK>` dikosongkan, ini menjadi mute Global.
+*   `/smoke-maint off` — Membatalkan mode mute/maintenance.
+*   `/smoke 6h <NAMA-LINK>` — Bot akan mengirimkan grafik secara instan ke grup.
+
+Pesan alert `DOWN`/`WARN` juga dilengkapi dengan **[ Tombol Klik ]** di panel bawah pesan, sehingga NOC bisa menekan tombol **[ Mute 1h ]** atau **[ Graph 24h ]** langsung tanpa mengetik chat!
+
 
 ### Environment Variables (opsional)
 
