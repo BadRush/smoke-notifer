@@ -141,7 +141,7 @@ class CommandListener(threading.Thread):
 
         gl_mute = "\n🔇 <b>GLOBAL MAINTENANCE ACTIVE</b>\n" if self.state.is_maintenance("_global_") else ""
 
-        msg = f"📊 <b>Smart Status Summary</b>\n{gl_mute}─────────────────────\n"
+        msg = f"📊 <b>Smoke-Notifier Status Summary</b>\n{gl_mute}─────────────────────\n"
         
         for folder, lines in groups.items():
             msg += f"\n<b>📁 {folder}</b>\n"
