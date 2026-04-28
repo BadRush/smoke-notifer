@@ -72,8 +72,16 @@ class CommandListener(threading.Thread):
             chat_id = str(msg["chat"]["id"])
             if not self._is_allowed(chat_id):
                 return
+                
+            thread_id = msg.get("message_thread_id")
+            
+            # Jika bot dikonfigurasi untuk thread tertentu, abaikan pesan dari luar thread tersebut
+            if self.config.telegram_thread_id is not None:
+                if thread_id != self.config.telegram_thread_id:
+                    return
+                    
             text = msg["text"].strip()
-            self._handle_command(text, chat_id, msg.get("message_thread_id"))
+            self._handle_command(text, chat_id, thread_id)
 
         elif "callback_query" in update:
             cb = update["callback_query"]
