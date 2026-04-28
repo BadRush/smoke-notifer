@@ -59,6 +59,19 @@ class StateManager:
     def get_all(self) -> Dict[str, dict]:
         return dict(self._state)
 
+    def get_baseline(self, label: str) -> Optional[dict]:
+        """Get persisted dynamic baseline for a link."""
+        return self._state.get("_baselines_", {}).get(label)
+
+    def set_baseline(self, label: str, baseline: Optional[dict]):
+        """Persist dynamic baseline for a link."""
+        baselines = self._state.setdefault("_baselines_", {})
+        if baseline is None:
+            baselines.pop(label, None)
+        else:
+            baselines[label] = baseline
+        self.save()
+
     def inc_maint_ok_count(self, label: str) -> int:
         """Increment consecutive OK count during maintenance and return it."""
         current = self.get(label)

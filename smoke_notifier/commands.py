@@ -220,11 +220,16 @@ class CommandListener(threading.Thread):
             )
             return
 
+        baseline = self.state.get_baseline(label)
         temp_cfg = link_cfg.copy()
-        gpath = self.grapher.generate(temp_cfg, duration=dur)
+        gpath = self.grapher.generate(temp_cfg, duration=dur, baseline=baseline)
         if gpath:
+            caption = f"📈 Graph {dur} untuk <b>{label}</b>"
+            if baseline:
+                caption += f"\n🤖 <i>Dynamic Baseline Active</i>"
+            
             self.notifier.send_photo(
-                gpath, caption=f"📈 Graph {dur} untuk <b>{label}</b>",
+                gpath, caption=caption,
                 chat_id=chat_id, thread_id=thread_id
             )
             self.grapher.cleanup(gpath)

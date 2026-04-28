@@ -51,7 +51,6 @@ class SmokePingMonitor:
         
         # New features init
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
-        self._baselines = {}
         self._last_baseline_update = 0
         self._cycle_alerts = []
 
@@ -77,11 +76,7 @@ class SmokePingMonitor:
         def fetch_and_store(link_cfg):
             rrd_file = os.path.join(self.config.rrd_base_path, link_cfg["rrd_path"])
             baseline = RRDReader.fetch_baseline(rrd_file)
-            if baseline:
-                self._baselines[link_cfg["label"]] = baseline
-            else:
-                # Remove if exists so it falls back to static config
-                self._baselines.pop(link_cfg["label"], None)
+            self.state.set_baseline(link_cfg["label"], baseline)
                 
         for link_cfg in self.config.links:
             self.executor.submit(fetch_and_store, link_cfg)
@@ -107,7 +102,8 @@ class SmokePingMonitor:
                 ]
             }
 
-        graph_path = self.grapher.generate(link_cfg)
+        baseline = self.state.get_baseline(link_cfg["label"])
+        graph_path = self.grapher.generate(link_cfg, baseline=baseline)
         self.notifier.send_alert(
             msg, graph_path, chat_id=chat_id,
             thread_id=thread_id, reply_markup=reply_markup
@@ -379,7 +375,7 @@ class SmokePingMonitor:
                         log.error(f"Error fetching RRD for {label}: {e}")
                         data = None
                     
-                    baseline = self._baselines.get(label)
+                    baseline = self.state.get_baseline(label)
                     status = self.evaluator.evaluate(data, link_cfg, baseline=baseline)
                     
                     raw_data[label] = data
