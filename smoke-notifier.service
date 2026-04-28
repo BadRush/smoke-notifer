@@ -3,6 +3,8 @@ Description=smoke-notifier — SmokePing RRD Monitor / Telegram Alert
 Documentation=https://github.com/BadRush/smoke-notifier
 After=network-online.target
 Wants=network-online.target
+StartLimitBurst=5
+StartLimitIntervalSec=300
 
 [Service]
 Type=simple
@@ -16,8 +18,6 @@ ExecReload=/bin/kill -HUP $MAINPID
 # Restart policy
 Restart=on-failure
 RestartSec=10
-StartLimitBurst=5
-StartLimitIntervalSec=300
 
 # Environment — load .env file (- prefix = no error if missing)
 EnvironmentFile=-/opt/smoke-notifier/.env
