@@ -8,6 +8,8 @@ import time
 import signal
 import logging
 import argparse
+import threading
+import concurrent.futures
 from datetime import datetime
 from typing import Optional
 
@@ -46,11 +48,72 @@ class SmokePingMonitor:
         self.builder   = AlertBuilder()
         self._running  = True
         self._last_heartbeat_date: Optional[str] = None
+        
+        # New features init
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
+        self._baselines = {}
+        self._last_baseline_update = 0
+        self._cycle_alerts = []
 
     def stop(self, *_args):
         """Signal handler — graceful shutdown."""
         log.info("Shutdown signal received, finishing current cycle...")
         self._running = False
+        self.executor.shutdown(wait=False)
+
+    def _update_baselines(self):
+        """Fetch historical baselines for all links in the background."""
+        if not self.config.dynamic_thresholds_enabled:
+            return
+            
+        now = time.time()
+        # Update every 6 hours
+        if now - self._last_baseline_update < 21600:
+            return
+            
+        self._last_baseline_update = now
+        log.info("Updating dynamic baselines in background...")
+        
+        def fetch_and_store(link_cfg):
+            rrd_file = os.path.join(self.config.rrd_base_path, link_cfg["rrd_path"])
+            baseline = RRDReader.fetch_baseline(rrd_file)
+            if baseline:
+                self._baselines[link_cfg["label"]] = baseline
+            else:
+                # Remove if exists so it falls back to static config
+                self._baselines.pop(link_cfg["label"], None)
+                
+        for link_cfg in self.config.links:
+            self.executor.submit(fetch_and_store, link_cfg)
+
+    def _send_individual_alert(self, msg: str, link_cfg: dict, status: str, prev_status: str):
+        """Helper to send an alert with a graph in a background thread."""
+        chat_id = str(link_cfg.get("chat_id")) if link_cfg.get("chat_id") else None
+        thread_id = int(link_cfg.get("message_thread_id")) if link_cfg.get("message_thread_id") else None
+        
+        reply_markup = None
+        if self.config.telegram_listen_commands and status in (STATUS_DOWN, STATUS_WARN, STATUS_CRIT):
+            short_lbl = link_cfg["label"][:40]
+            reply_markup = {
+                "inline_keyboard": [
+                    [
+                        {"text": "📉 Graph 6h", "callback_data": f"g:6h:{short_lbl}"},
+                        {"text": "📉 Graph 24h", "callback_data": f"g:24h:{short_lbl}"}
+                    ],
+                    [
+                        {"text": "🔇 Mute 1h", "callback_data": f"m:1h:{short_lbl}"},
+                        {"text": "❌ Tutup", "callback_data": "dismiss"}
+                    ]
+                ]
+            }
+
+        graph_path = self.grapher.generate(link_cfg)
+        self.notifier.send_alert(
+            msg, graph_path, chat_id=chat_id,
+            thread_id=thread_id, reply_markup=reply_markup
+        )
+        if graph_path:
+            self.grapher.cleanup(graph_path)
 
     # ── Get Effective Status (Pass 2) ─────────────────────────────
     def _get_effective_status(self, label: str, raw_statuses: dict, visited: set = None) -> str:
@@ -89,26 +152,46 @@ class SmokePingMonitor:
         pending_since = prev_state.get("pending_since")
         now = datetime.now()
         now_iso = now.isoformat()
+        
+        baseline = self._baselines.get(label)
 
-        # Maintenance Check (silent drop)
+        # Maintenance Check
         if self.state.is_maintenance(label):
+            if status == STATUS_OK:
+                # Track consecutive OKs during maintenance
+                count = self.state.inc_maint_ok_count(label)
+                if count >= 3:
+                    log.info(f"  ↳ {label}: Stable OK detected during maintenance — AUTO-RESUMING")
+                    self.state.set_maintenance(label, 0) # Turn off maintenance
+                    self.state.reset_maint_ok_count(label)
+                    
+                    msg = (
+                        f"🔊 <b>Smart Maintenance Recovery</b>\n"
+                        f"─────────────────────\n"
+                        f"Link <code>{label}</code> telah stabil kembali (3x OK).\n"
+                        f"Maintenance otomatis <b>dinonaktifkan</b>."
+                    )
+                    chat_id = str(link_cfg.get("chat_id")) if link_cfg.get("chat_id") else None
+                    thread_id = int(link_cfg.get("message_thread_id")) if link_cfg.get("message_thread_id") else None
+                    self.notifier.send_message(msg, chat_id=chat_id, thread_id=thread_id)
+            else:
+                self.state.reset_maint_ok_count(label)
+            
             self.state.update(label, status, now_iso)
             return
+
+        # Always reset count if not in maintenance
+        self.state.reset_maint_ok_count(label)
 
         # ── First run: set initial state ──────────────────────────
         if prev_status == STATUS_UNKNOWN:
             log.info(f"  ↳ Initial state: {status}")
             self.state.update(label, status, now_iso)
             if status not in (STATUS_OK, STATUS_UNREACHABLE):
-                msg = self.builder.build_alert(link_cfg, data, status, STATUS_OK)
+                msg = self.builder.build_alert(link_cfg, data, status, STATUS_OK, baseline=baseline)
                 if not self.dry_run:
-                    graph_path = self.grapher.generate(link_cfg)
-                    self.notifier.send_alert(
-                        msg, graph_path, chat_id=link_cfg.get("chat_id"),
-                        thread_id=link_cfg.get("message_thread_id")
-                    )
-                    if graph_path:
-                        self.grapher.cleanup(graph_path)
+                    # Queue for individual send (initial alerts aren't batched for simplicity)
+                    self.executor.submit(self._send_individual_alert, msg, link_cfg, status, STATUS_OK)
                     self.state.record_alert(label, now_iso)
                 else:
                     log.info("  [DRY-RUN] Would send initial alert")
@@ -159,26 +242,6 @@ class SmokePingMonitor:
             else:
                 log.info(f"{label:30s} | HARD STATE | {prev_status} → {status}")
 
-        chat_id = str(link_cfg.get("chat_id")) if link_cfg.get("chat_id") else None
-        thread_id = int(link_cfg.get("message_thread_id")) if link_cfg.get("message_thread_id") else None
-
-        # Build inline keyboard if needed
-        reply_markup = None
-        if self.config.telegram_listen_commands and status in (STATUS_DOWN, STATUS_WARN, STATUS_CRIT):
-            short_lbl = label[:40]
-            reply_markup = {
-                "inline_keyboard": [
-                    [
-                        {"text": "📉 Graph 6h", "callback_data": f"g:6h:{short_lbl}"},
-                        {"text": "📉 Graph 24h", "callback_data": f"g:24h:{short_lbl}"}
-                    ],
-                    [
-                        {"text": "🔇 Mute 1h", "callback_data": f"m:1h:{short_lbl}"},
-                        {"text": "❌ Tutup", "callback_data": "dismiss"}
-                    ]
-                ]
-            }
-
         # ── Dependency Suppressions ──────────────────────────────
         if status == STATUS_UNREACHABLE:
             log.info(f"  ↳ {label}: Parent link issue — suppressing alert (UNREACHABLE)")
@@ -196,9 +259,10 @@ class SmokePingMonitor:
         ):
             if prev_status != STATUS_FLAPPING:
                 log.warning(f"  ↳ {label}: FLAPPING detected — suppressing")
-                msg = self.builder.build_alert(link_cfg, data, STATUS_FLAPPING, prev_status)
+                msg = self.builder.build_alert(link_cfg, data, STATUS_FLAPPING, prev_status, baseline=baseline)
                 if not self.dry_run:
-                    self.notifier.send_message(msg, chat_id=chat_id, thread_id=thread_id)
+                    # Flapping alerts are usually important, send immediately via executor
+                    self.executor.submit(self.notifier.send_message, msg, chat_id=link_cfg.get("chat_id"), thread_id=link_cfg.get("message_thread_id"))
                     self.state.record_alert(label, now_iso)
                 self.state.update(label, STATUS_FLAPPING, now_iso)
             return
@@ -208,24 +272,20 @@ class SmokePingMonitor:
             self.state.update(label, status, now_iso)
             return
 
-        # ── Send Alert ───────────────────────────────────────────
+        # ── Queue Alert for Batching ──────────────────────────────
         downtime = None
         if status == STATUS_OK:
             downtime = self.state.get_downtime(label)
 
-        msg = self.builder.build_alert(link_cfg, data, status, prev_status, downtime)
-
-        if self.dry_run:
-            log.info(f"  [DRY-RUN] Would send:\n{msg}")
-        else:
-            graph_path = self.grapher.generate(link_cfg)
-            self.notifier.send_alert(
-                msg, graph_path, chat_id=chat_id,
-                thread_id=thread_id, reply_markup=reply_markup
-            )
-            if graph_path:
-                self.grapher.cleanup(graph_path)
-            self.state.record_alert(label, now_iso)
+        msg = self.builder.build_alert(link_cfg, data, status, prev_status, downtime, baseline=baseline)
+        
+        self._cycle_alerts.append({
+            "label": label,
+            "status": status,
+            "prev_status": prev_status,
+            "msg": msg,
+            "link_cfg": link_cfg
+        })
 
         self.state.update(label, status, now_iso)
 
@@ -296,19 +356,31 @@ class SmokePingMonitor:
 
         while self._running:
             try:
-                # Pass 1: Fetch raw data and evaluate raw status
-                raw_data = {}
-                raw_statuses = {}
+                self._cycle_alerts = []
+                self._update_baselines()
+
+                # Pass 1: Fetch raw data in parallel
+                future_to_link = {}
                 for link_cfg in self.config.links:
-                    if not self._running:
-                        break
-                        
-                    label = link_cfg["label"]
+                    if not self._running: break
                     rrd_file = os.path.join(self.config.rrd_base_path, link_cfg["rrd_path"])
                     num_probes = link_cfg.get("num_probes", self.config.default_num_probes)
+                    future = self.executor.submit(RRDReader.fetch, rrd_file, num_probes)
+                    future_to_link[future] = link_cfg
+
+                raw_data = {}
+                raw_statuses = {}
+                for future in concurrent.futures.as_completed(future_to_link):
+                    link_cfg = future_to_link[future]
+                    label = link_cfg["label"]
+                    try:
+                        data = future.result()
+                    except Exception as e:
+                        log.error(f"Error fetching RRD for {label}: {e}")
+                        data = None
                     
-                    data = RRDReader.fetch(rrd_file, num_probes)
-                    status = self.evaluator.evaluate(data, link_cfg)
+                    baseline = self._baselines.get(label)
+                    status = self.evaluator.evaluate(data, link_cfg, baseline=baseline)
                     
                     raw_data[label] = data
                     raw_statuses[label] = status
@@ -319,8 +391,35 @@ class SmokePingMonitor:
                         label = link_cfg["label"]
                         data = raw_data[label]
                         effective_status = self._get_effective_status(label, raw_statuses)
-                        
                         self._process_link_state(link_cfg, data, effective_status)
+
+                # Pass 4: Flush Batched Alerts
+                if self._running and self._cycle_alerts:
+                    batch_enabled = self.config.batching_enabled
+                    threshold = self.config.batching_threshold
+                    
+                    if batch_enabled and len(self._cycle_alerts) >= threshold:
+                        log.info(f"Batching {len(self._cycle_alerts)} alerts into a single summary")
+                        summary_msg = self.builder.build_summary_alert(self._cycle_alerts)
+                        if not self.dry_run:
+                            # Send summary text immediately
+                            self.notifier.send_message(summary_msg)
+                            for a in self._cycle_alerts:
+                                self.state.record_alert(a["label"], datetime.now().isoformat())
+                    else:
+                        # Send individually via executor
+                        for alert_item in self._cycle_alerts:
+                            if self.dry_run:
+                                log.info(f"  [DRY-RUN] Would send alert for {alert_item['label']}")
+                            else:
+                                self.executor.submit(
+                                    self._send_individual_alert, 
+                                    alert_item["msg"], 
+                                    alert_item["link_cfg"],
+                                    alert_item["status"],
+                                    alert_item["prev_status"]
+                                )
+                                self.state.record_alert(alert_item["label"], datetime.now().isoformat())
 
                 if self._running:
                     self._check_heartbeat()
@@ -405,3 +504,4 @@ def main():
     signal.signal(signal.SIGINT,  monitor.stop)
 
     monitor.run()
+

@@ -111,3 +111,76 @@ class RRDReader:
         except Exception as e:
             log.error(f"Failed to read RRD {rrd_file}: {e}")
             return None
+
+    @staticmethod
+    def fetch_baseline(rrd_file: str, min_rows: int = 288) -> Optional[dict]:
+        """
+        Fetch historical data (last 1 week minus last 1 hour) to calculate dynamic baseline.
+        Requires at least `min_rows` (default 288 = ~1 day for 300s step) of valid data.
+        Returns: {"mean": float, "stddev": float, "warn_rtt": float, "crit_rtt": float}
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "rrdtool", "fetch", rrd_file, "AVERAGE",
+                    "--start", "-1w", "--end", "-1h",
+                ],
+                capture_output=True, text=True, timeout=15,
+            )
+
+            if result.returncode != 0:
+                return None
+
+            lines = result.stdout.strip().splitlines()
+            if len(lines) < 3:
+                return None
+
+            ds_names = lines[0].split()
+            if "median" not in ds_names:
+                return None
+                
+            median_idx = ds_names.index("median")
+            valid_rtt_values = []
+
+            for line in lines[2:]:
+                stripped = line.strip()
+                if not stripped or ":" not in stripped:
+                    continue
+                raw_values = stripped.split(":")[1].strip().split()
+                if len(raw_values) > median_idx:
+                    val = raw_values[median_idx]
+                    if val.lower().strip("-") != "nan":
+                        try:
+                            # Convert to ms
+                            rtt_ms = float(val) * 1000.0
+                            if rtt_ms > 0:
+                                valid_rtt_values.append(rtt_ms)
+                        except ValueError:
+                            pass
+
+            if len(valid_rtt_values) < min_rows:
+                log.info(f"Insufficient baseline data for {rrd_file}: {len(valid_rtt_values)}/{min_rows} rows.")
+                return None
+
+            # Calculate Mean and Standard Deviation
+            n = len(valid_rtt_values)
+            mean = sum(valid_rtt_values) / n
+            variance = sum((x - mean) ** 2 for x in valid_rtt_values) / n
+            stddev = variance ** 0.5
+
+            # Dynamic Thresholds
+            # Warn = Mean + 2*StdDev (minimum cap 5ms)
+            # Crit = Mean + 3*StdDev (minimum cap 10ms)
+            warn_rtt = max(5.0, mean + (2 * stddev))
+            crit_rtt = max(10.0, mean + (3 * stddev))
+
+            return {
+                "mean": round(mean, 2),
+                "stddev": round(stddev, 2),
+                "warn_rtt": round(warn_rtt, 2),
+                "crit_rtt": round(crit_rtt, 2)
+            }
+
+        except Exception as e:
+            log.debug(f"Failed to fetch baseline for {rrd_file}: {e}")
+            return None

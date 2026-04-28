@@ -7,6 +7,7 @@ import sys
 import json
 import time
 import logging
+import threading
 from typing import Optional, List
 
 try:
@@ -32,15 +33,18 @@ class TelegramNotifier:
         self.max_retries = max_retries
         self.rate_limit  = rate_limit
         self._send_times: List[float] = []
+        self._lock       = threading.Lock()
         self._base_url   = f"https://api.telegram.org/bot{token}"
 
     def _rate_ok(self) -> bool:
         now = time.time()
-        self._send_times = [t for t in self._send_times if now - t < 60]
-        return len(self._send_times) < self.rate_limit
+        with self._lock:
+            self._send_times = [t for t in self._send_times if now - t < 60]
+            return len(self._send_times) < self.rate_limit
 
     def _record(self):
-        self._send_times.append(time.time())
+        with self._lock:
+            self._send_times.append(time.time())
 
     def _truncate(self, text: str, limit: int) -> str:
         """Truncate text to Telegram limit, preserving HTML tags."""
