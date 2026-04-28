@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smoke-notifier"
+version = "2.0.0"
+description = "SmokePing RRD Monitor → Telegram Alert with Graph"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "BadRush"},
+]
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.28.0",
+    "PyYAML>=6.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+smoke-notifier = "smoke_notifier.monitor:main"
+
+[tool.setuptools.packages.find]
+include = ["smoke_notifier*"]

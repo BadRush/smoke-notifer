@@ -1,5 +1,6 @@
 # Config with secrets
 config.yaml
+.env
 
 # State & runtime
 state.json

@@ -1,24 +1,28 @@
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║           smoke-notifier — Configuration File                  ║
 # ║  Copy file ini ke config.yaml lalu edit sesuai kebutuhan       ║
-# ║  Version: 1.1.0 | Copyright: (c) 2026 BadRush                  ║
+# ║  Version: 2.0.0 | Copyright: (c) 2026 BadRush                  ║
 # ╚══════════════════════════════════════════════════════════════════╝
+#
+# NOTE: Telegram secrets (bot_token, chat_id) sekarang dikelola via
+# file .env — lihat .env.example untuk template.
+# Environment variables akan OVERRIDE nilai di file ini.
 
 # ─── Telegram Bot ─────────────────────────────────────────────────
-# Bisa juga di-override via environment variable:
-#   SMOKE_TG_TOKEN   → override bot_token
-#   SMOKE_TG_CHAT_ID → override chat_id
+# Secrets dikelola via .env file:
+#   SMOKE_TG_TOKEN    → bot_token
+#   SMOKE_TG_CHAT_ID  → chat_id
+#   SMOKE_TG_THREAD_ID → message_thread_id
 telegram:
-  bot_token: "YOUR_BOT_TOKEN"       # dari @BotFather
-  chat_id: "YOUR_CHAT_ID"           # user/group/channel ID
-  # message_thread_id: 123          # (opsional) ID thread/topic di grup
-                                     # Untuk grup dengan Topics enabled:
-                                     #   1. Buka topic di Telegram Desktop/Web
-                                     #   2. Lihat URL: https://t.me/c/xxxxx/123
-                                     #                                     ^^^
-                                     #   3. Angka terakhir = message_thread_id
-                                     # Kosongkan jika kirim ke General topic atau chat biasa
-                                     # Override via env: SMOKE_TG_THREAD_ID
+  bot_token: "${SMOKE_TG_TOKEN}"       # di-set via .env file
+  chat_id: "${SMOKE_TG_CHAT_ID}"       # di-set via .env file
+  # message_thread_id: 123             # (opsional) ID thread/topic di grup
+                                       # Untuk grup dengan Topics enabled:
+                                       #   1. Buka topic di Telegram Desktop/Web
+                                       #   2. Lihat URL: https://t.me/c/xxxxx/123
+                                       #                                     ^^^
+                                       #   3. Angka terakhir = message_thread_id
+                                       # Kosongkan jika kirim ke General topic atau chat biasa
   
   # ─── Command Listener (Interactive NOC) ───
   listen_commands: true             # Aktifkan fitur listener (/smoke-status, tombol inline)
@@ -77,6 +81,8 @@ state_file: "/opt/smoke-notifier/state.json"
 #   warn_jitter : Jitter/SD (ms) >= ini → WARNING  (opsional)
 #   crit_jitter : Jitter/SD (ms) >= ini → CRITICAL (opsional)
 #   num_probes  : jumlah probe (override default smokeping.num_probes)
+#   depends_on  : list of parent links (opsional). Jika parent bermasalah (CRIT/DOWN),
+#                 alert untuk link ini akan didiamkan (suppressed) menjadi UNREACHABLE.
 #
 # rrd_path relatif dari smokeping.rrd_base_path
 
@@ -108,12 +114,16 @@ links:
     warn_jitter: 3
     crit_jitter: 8
     num_probes: 20
+    depends_on:
+      - "Upstream-A (Telkom)"
 
   # ─── Tambah link lain di bawah sini ───
-  # - label: "Nama Link"
-  #   rrd_path: "Folder/NamaFile.rrd"
+  # - label: "Customer A"
+  #   rrd_path: "Customer/CustA.rrd"
   #   warn_rtt: 10
   #   crit_rtt: 50
   #   warn_loss: 5
   #   crit_loss: 20
   #   num_probes: 20
+  #   depends_on:
+  #     - "Backbone PWT-JKT"

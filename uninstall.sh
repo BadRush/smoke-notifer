@@ -166,7 +166,7 @@ ask "Uninstall pip packages (requests, PyYAML)? [y/N]: "
 read -r PIP_CLEAN
 
 if [[ "${PIP_CLEAN,,}" == "y" ]]; then
-    pip3 uninstall -y requests PyYAML 2>/dev/null || true
+    pip3 uninstall -y requests PyYAML python-dotenv 2>/dev/null || true
     info "pip packages removed"
 else
     info "pip packages tetap terinstall"
