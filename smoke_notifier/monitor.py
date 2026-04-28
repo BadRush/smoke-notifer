@@ -85,18 +85,71 @@ class SmokePingMonitor:
         label = link_cfg["label"]
         prev_state  = self.state.get(label)
         prev_status = prev_state.get("status", STATUS_UNKNOWN)
-        now_iso     = datetime.now().isoformat()
+        pending_status = prev_state.get("pending_status")
+        pending_since = prev_state.get("pending_since")
+        now = datetime.now()
+        now_iso = now.isoformat()
 
         # Maintenance Check (silent drop)
         if self.state.is_maintenance(label):
             self.state.update(label, status, now_iso)
             return
 
+        # ── First run: set initial state ──────────────────────────
+        if prev_status == STATUS_UNKNOWN:
+            log.info(f"  ↳ Initial state: {status}")
+            self.state.update(label, status, now_iso)
+            if status not in (STATUS_OK, STATUS_UNREACHABLE):
+                msg = self.builder.build_alert(link_cfg, data, status, STATUS_OK)
+                if not self.dry_run:
+                    graph_path = self.grapher.generate(link_cfg)
+                    self.notifier.send_alert(
+                        msg, graph_path, chat_id=link_cfg.get("chat_id"),
+                        thread_id=link_cfg.get("message_thread_id")
+                    )
+                    if graph_path:
+                        self.grapher.cleanup(graph_path)
+                    self.state.record_alert(label, now_iso)
+                else:
+                    log.info("  [DRY-RUN] Would send initial alert")
+            return
+
+        # ── No change → skip ─────────────────────────────────────
+        if status == prev_status:
+            if pending_status is not None:
+                self.state.update_soft_status(label, None, now_iso)
+            self.state.update(label, status, now_iso)
+            return
+
+        # ── Soft State / Delay Logic ──────────────────────────────
+        delay_sec = self.config.alert_delay(status)
+        if status in (STATUS_UNREACHABLE, STATUS_FLAPPING):
+            delay_sec = 0  # Internal statuses transition immediately
+
+        if delay_sec > 0:
+            if status == pending_status:
+                try:
+                    since = datetime.fromisoformat(pending_since)
+                    elapsed = (now - since).total_seconds()
+                except (ValueError, TypeError):
+                    elapsed = 0
+                
+                if elapsed < delay_sec:
+                    # Masih dalam masa tunggu
+                    self.state.update_soft_status(label, status, pending_since)
+                    return
+            else:
+                # Baru memasuki status non-OK/perubahan status
+                log.info(f"{label:30s} | SOFT STATE | {prev_status} → {status} (Waiting {delay_sec}s)")
+                self.state.update_soft_status(label, status, now_iso)
+                return
+
+        # ── Hard State Transition ─────────────────────────────────
         # Logging
         if data and data.get("median_rtt") is not None:
             jit = f" | Jitter: {data['jitter']} ms" if data.get("jitter") else ""
             log.info(
-                f"{label:30s} | RTT: {data['median_rtt']:>8} ms | "
+                f"{label:30s} | HARD STATE | RTT: {data['median_rtt']:>8} ms | "
                 f"Loss: {data['loss_pct']:>5}%{jit} | "
                 f"{prev_status} → {status}"
             )
@@ -104,7 +157,7 @@ class SmokePingMonitor:
             if status == STATUS_UNREACHABLE:
                 log.info(f"{label:30s} | PARENT DOWN | {prev_status} → {status}")
             else:
-                log.info(f"{label:30s} | DOWN | {prev_status} → {status}")
+                log.info(f"{label:30s} | HARD STATE | {prev_status} → {status}")
 
         chat_id = str(link_cfg.get("chat_id")) if link_cfg.get("chat_id") else None
         thread_id = int(link_cfg.get("message_thread_id")) if link_cfg.get("message_thread_id") else None
@@ -125,30 +178,6 @@ class SmokePingMonitor:
                     ]
                 ]
             }
-
-        # ── First run: set initial state ──────────────────────────
-        if prev_status == STATUS_UNKNOWN:
-            log.info(f"  ↳ Initial state: {status}")
-            self.state.update(label, status, now_iso)
-            if status not in (STATUS_OK, STATUS_UNREACHABLE):
-                msg = self.builder.build_alert(link_cfg, data, status, STATUS_OK)
-                if not self.dry_run:
-                    graph_path = self.grapher.generate(link_cfg)
-                    self.notifier.send_alert(
-                        msg, graph_path, chat_id=chat_id,
-                        thread_id=thread_id, reply_markup=reply_markup
-                    )
-                    if graph_path:
-                        self.grapher.cleanup(graph_path)
-                    self.state.record_alert(label, now_iso)
-                else:
-                    log.info("  [DRY-RUN] Would send initial alert")
-            return
-
-        # ── No change → skip ─────────────────────────────────────
-        if status == prev_status:
-            self.state.update(label, status, now_iso)
-            return
 
         # ── Dependency Suppressions ──────────────────────────────
         if status == STATUS_UNREACHABLE:

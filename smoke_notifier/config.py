@@ -234,6 +234,14 @@ class Config:
     def flapping_window(self) -> int:
         return int(self._raw.get("alerts", {}).get("flapping", {}).get("window", 600))
 
+    def alert_delay(self, status: str) -> int:
+        """Returns the delay in seconds for a specific status (warn, crit, down, ok). Default 0."""
+        delays = self._raw.get("alerts", {}).get("delay", {})
+        # Jika user menggunakan format lama (angka langsung), return angka tersebut untuk semua non-ok
+        if isinstance(delays, int):
+            return delays if status != "ok" else 0
+        return int(delays.get(status.lower(), 0))
+
     @property
     def rate_limit_per_minute(self) -> int:
         return int(self._raw.get("alerts", {}).get("rate_limit", {}).get("max_per_minute", 20))

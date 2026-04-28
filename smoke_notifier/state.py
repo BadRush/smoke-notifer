@@ -48,6 +48,8 @@ class StateManager:
             "last_alert": None,
             "last_check": None,
             "changes": [],
+            "pending_status": None,
+            "pending_since": None,
         }
 
     def get(self, label: str) -> dict:
@@ -56,8 +58,22 @@ class StateManager:
     def get_all(self) -> Dict[str, dict]:
         return dict(self._state)
 
+    def update_soft_status(self, label: str, soft_status: Optional[str], now_iso: str):
+        """Update pending soft status (for alert delay)."""
+        current = self.get(label)
+        if soft_status is None:
+            current["pending_status"] = None
+            current["pending_since"] = None
+        elif current.get("pending_status") != soft_status:
+            current["pending_status"] = soft_status
+            current["pending_since"] = now_iso
+        
+        current["last_check"] = now_iso
+        self._state[label] = current
+        self.save()
+
     def update(self, label: str, status: str, now_iso: str):
-        """Update link status. Tracks state changes for flapping detection."""
+        """Update HARD link status. Tracks state changes for flapping detection."""
         current = self.get(label)
 
         if current["status"] != status:
@@ -67,6 +83,9 @@ class StateManager:
             current["changes"] = changes
             current["last_change"] = now_iso
             current["status"] = status
+            # Clear pending since we just transitioned
+            current["pending_status"] = None
+            current["pending_since"] = None
 
         current["last_check"] = now_iso
         self._state[label] = current

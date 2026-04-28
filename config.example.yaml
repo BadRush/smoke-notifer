@@ -47,6 +47,12 @@ graph:
 
 # ─── Alert Settings ──────────────────────────────────────────────
 alerts:
+  delay:
+    warn: 300             # detik — status harus stabil selama ini sebelum alert WARN dikirim
+    crit: 0               # detik — langsung kirim alert CRIT tanpa ditunda
+    down: 0               # detik — langsung kirim alert DOWN tanpa ditunda
+    ok: 0                 # detik — langsung kirim notifikasi RECOVERED (OK)
+  
   flapping:
     cooldown: 300         # detik — jeda minimum antar alert per link
     max_changes: 4        # jumlah state change dalam window = flapping
