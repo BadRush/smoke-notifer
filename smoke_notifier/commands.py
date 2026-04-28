@@ -133,11 +133,11 @@ class CommandListener(threading.Thread):
             m_str = " 🔇(Muted)" if self.state.is_maintenance(lbl) else ""
             
             if st == STATUS_OK:
-                groups[folder].append(f" - 🟢 <code>{lbl}</code>{m_str}")
+                groups[folder].append(f"🟢 <code>{lbl}</code>{m_str}")
             else:
                 emoji = STATUS_EMOJI.get(st, "⚪")
                 # Insert at the top of the group so NON-OK links are visible first
-                groups[folder].insert(0, f" - {emoji} <code>{lbl}</code>: <b>{st}</b>{m_str}")
+                groups[folder].insert(0, f"{emoji} <code>{lbl}</code>: <b>{st}</b>{m_str}")
 
         gl_mute = "\n🔇 <b>GLOBAL MAINTENANCE ACTIVE</b>\n" if self.state.is_maintenance("_global_") else ""
 
