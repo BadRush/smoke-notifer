@@ -14,8 +14,8 @@
 #   SMOKE_TG_CHAT_ID  → chat_id
 #   SMOKE_TG_THREAD_ID → message_thread_id
 telegram:
-  bot_token: "${SMOKE_TG_TOKEN}"       # di-set via .env file
-  chat_id: "${SMOKE_TG_CHAT_ID}"       # di-set via .env file
+  bot_token: ""                        # akan di-override oleh .env file
+  chat_id: ""                          # akan di-override oleh .env file
   # message_thread_id: 123             # (opsional) ID thread/topic di grup
                                        # Untuk grup dengan Topics enabled:
                                        #   1. Buka topic di Telegram Desktop/Web
@@ -89,12 +89,14 @@ state_file: "/opt/smoke-notifier/state.json"
 #   num_probes  : jumlah probe (override default smokeping.num_probes)
 #   depends_on  : list of parent links (opsional). Jika parent bermasalah (CRIT/DOWN),
 #                 alert untuk link ini akan didiamkan (suppressed) menjadi UNREACHABLE.
+#   chat_id     : (opsional) kirim alert link ini ke grup khusus (override default).
+#   message_thread_id : (opsional) ID thread/topik untuk link ini.
 #
 # rrd_path relatif dari smokeping.rrd_base_path
 
 links:
-  - label: "Upstream-A (Telkom)"
-    rrd_path: "Upstream/TelkomA.rrd"
+  - label: "Upstream-A (ISP-1)"
+    rrd_path: "Upstream/ISP-1.rrd"
     warn_rtt: 30
     crit_rtt: 80
     warn_loss: 5
@@ -103,16 +105,16 @@ links:
     crit_jitter: 30
     num_probes: 20
 
-  - label: "Upstream-B (Biznet)"
-    rrd_path: "Upstream/BiznetB.rrd"
+  - label: "Upstream-B (ISP-2)"
+    rrd_path: "Upstream/ISP-2.rrd"
     warn_rtt: 20
     crit_rtt: 60
     warn_loss: 5
     crit_loss: 20
     num_probes: 20
 
-  - label: "Backbone PWT-JKT"
-    rrd_path: "Backbone/PWT-JKT.rrd"
+  - label: "Backbone JKT-SBY"
+    rrd_path: "Backbone/JKT-SBY.rrd"
     warn_rtt: 5
     crit_rtt: 15
     warn_loss: 2
@@ -121,15 +123,17 @@ links:
     crit_jitter: 8
     num_probes: 20
     depends_on:
-      - "Upstream-A (Telkom)"
+      - "Upstream-A (ISP-1)"
 
   # ─── Tambah link lain di bawah sini ───
-  # - label: "Customer A"
-  #   rrd_path: "Customer/CustA.rrd"
+  # - label: "Customer VIP"
+  #   rrd_path: "Customer/Cust-VIP.rrd"
   #   warn_rtt: 10
   #   crit_rtt: 50
   #   warn_loss: 5
   #   crit_loss: 20
   #   num_probes: 20
+  #   chat_id: "-100987654321"           # (Opsional) Kirim ke grup khusus VIP
+  #   message_thread_id: 456             # (Opsional) Jika grup VIP punya Topics
   #   depends_on:
-  #     - "Backbone PWT-JKT"
+  #     - "Backbone JKT-SBY"

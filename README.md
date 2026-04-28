@@ -106,8 +106,8 @@ graph:
 
 # Link definitions
 links:
-  - label: "Upstream-A (Telkom)"
-    rrd_path: "Upstream/TelkomA.rrd"
+  - label: "Upstream-A (ISP-1)"
+    rrd_path: "Upstream/ISP-1.rrd"
     warn_rtt: 30
     crit_rtt: 80
     warn_loss: 5
@@ -135,8 +135,8 @@ links:
 
 ```yaml
 links:
-  - label: "FS-PWT-YK"
-    rrd_path: "Backbone/FS-PWT.rrd"
+  - label: "Cust-VIP"
+    rrd_path: "Customer/Cust-VIP.rrd"
     chat_id: "-123456789" # Override kirim ke grup/user lain
     message_thread_id: 999 # Override kirim ke thread lain
 ```
@@ -183,7 +183,7 @@ find /var/lib/smokeping -name "*.rrd" | sort
 ### Step 2: Cek Data RTT Normal
 
 ```bash
-rrdtool fetch /var/lib/smokeping/Backbone/PWT-JKT.rrd AVERAGE --start -300
+rrdtool fetch /var/lib/smokeping/Backbone/JKT-SBY.rrd AVERAGE --start -300
 ```
 
 ### Step 3: Tentukan Threshold
