@@ -115,34 +115,37 @@ class CommandListener(threading.Thread):
             self._cmd_graph(parts[1:], chat_id, thread_id)
 
     def _cmd_status(self, chat_id: str, thread_id: Optional[int]):
-        import socket
-        hostname = socket.gethostname()
         states = self.state.get_all()
         links = self.config.links
 
-        ok_count = 0
-        lines = []
-        ok_lines = []
+        from collections import defaultdict
+        groups = defaultdict(list)
+
         for l in links:
             lbl = l["label"]
+            r_path = l.get("rrd_path", "")
+            
+            # Extract the first folder name from rrd_path, or "General" if none
+            parts = r_path.replace('\\', '/').split('/')
+            folder = parts[0] if len(parts) > 1 else "General"
+            
             st = states.get(lbl, {}).get("status", STATUS_UNKNOWN)
             m_str = " 🔇(Muted)" if self.state.is_maintenance(lbl) else ""
+            
             if st == STATUS_OK:
-                ok_count += 1
-                ok_lines.append(f"🟢 {lbl}{m_str}")
+                groups[folder].append(f" - 🟢 <code>{lbl}</code>{m_str}")
             else:
                 emoji = STATUS_EMOJI.get(st, "⚪")
-                lines.append(f"{emoji} {lbl}: <b>{st}</b>{m_str}")
+                # Insert at the top of the group so NON-OK links are visible first
+                groups[folder].insert(0, f" - {emoji} <code>{lbl}</code>: <b>{st}</b>{m_str}")
 
         gl_mute = "\n🔇 <b>GLOBAL MAINTENANCE ACTIVE</b>\n" if self.state.is_maintenance("_global_") else ""
 
-        msg = f"📊 <b>Status Summary</b> • <code>{hostname}</code>\n{gl_mute}─────────────────────\n"
-        if lines:
-            msg += "<b>⚠️ PRIORITAS / NON-OK:</b>\n" + "\n".join(lines) + "\n\n"
-            
-        msg += f"✅ <b>{ok_count} Links OK</b>"
-        if ok_lines:
-            msg += "\n" + "\n".join(ok_lines)
+        msg = f"📊 <b>Smart Status Summary</b>\n{gl_mute}─────────────────────\n"
+        
+        for folder, lines in groups.items():
+            msg += f"\n<b>📁 {folder}</b>\n"
+            msg += "\n".join(lines) + "\n"
 
         self.notifier.send_message(msg, chat_id=chat_id, thread_id=thread_id)
 
