@@ -61,7 +61,10 @@ class TelegramNotifier:
             return False
 
         target_chat = chat_id or self.chat_id
-        target_thread = thread_id if thread_id is not None else self.thread_id
+        if target_chat == self.chat_id:
+            target_thread = thread_id if thread_id is not None else self.thread_id
+        else:
+            target_thread = thread_id
 
         for attempt in range(1, self.max_retries + 1):
             try:
@@ -109,7 +112,10 @@ class TelegramNotifier:
 
         caption = self._truncate(caption, self.MAX_CAPTION)
         target_chat = chat_id or self.chat_id
-        target_thread = thread_id if thread_id is not None else self.thread_id
+        if target_chat == self.chat_id:
+            target_thread = thread_id if thread_id is not None else self.thread_id
+        else:
+            target_thread = thread_id
 
         for attempt in range(1, self.max_retries + 1):
             try:
