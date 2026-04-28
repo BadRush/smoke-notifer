@@ -89,7 +89,7 @@ class CommandListener(threading.Thread):
                     return
                     
             text = msg["text"].strip()
-            self._handle_command(text, chat_id, thread_id)
+            self._handle_command(text, chat_id, thread_id, user_id)
 
         elif "callback_query" in update:
             cb = update["callback_query"]
@@ -98,18 +98,22 @@ class CommandListener(threading.Thread):
             
             if not self._is_admin(user_id) and not self._is_allowed(chat_id):
                 return
-            self._handle_callback(cb)
+            self._handle_callback(cb, user_id)
 
-    def _handle_command(self, text: str, chat_id: str, thread_id: Optional[int]):
+    def _handle_command(self, text: str, chat_id: str, thread_id: Optional[int], user_id: str):
         parts = text.split()
         if not parts:
             return
 
         cmd = parts[0].split('@')[0].lower()
+        is_admin = self._is_admin(user_id)
 
         if cmd == "/smokestatus":
             self._cmd_status(chat_id, thread_id)
         elif cmd == "/smokemaint":
+            if not is_admin:
+                self.notifier.send_message("❌ Command ini hanya untuk Admin.", chat_id=chat_id, thread_id=thread_id)
+                return
             self._cmd_maint(parts[1:], chat_id, thread_id)
         elif cmd == "/smoke":
             self._cmd_graph(parts[1:], chat_id, thread_id)
@@ -230,12 +234,13 @@ class CommandListener(threading.Thread):
                 chat_id=chat_id, thread_id=thread_id
             )
 
-    def _handle_callback(self, cb: dict):
+    def _handle_callback(self, cb: dict, user_id: str):
         cb_id = cb["id"]
         data = cb.get("data", "")
         msg = cb.get("message", {})
         chat_id = str(msg.get("chat", {}).get("id", ""))
         msg_id = msg.get("message_id")
+        is_admin = self._is_admin(user_id)
 
         if data == "dismiss":
             requests.post(
@@ -275,6 +280,17 @@ class CommandListener(threading.Thread):
             label = link_cfg["label"]
 
             if action == "m":
+                if not is_admin:
+                    requests.post(
+                        f"{self.notifier._base_url}/answerCallbackQuery",
+                        json={
+                            "callback_query_id": cb_id,
+                            "text": "❌ Hanya Admin yang boleh Mute",
+                            "show_alert": True
+                        }, timeout=5
+                    )
+                    return
+
                 sec = self._parse_duration(val)
                 if sec:
                     self.state.set_maintenance(label, sec)

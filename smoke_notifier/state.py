@@ -50,6 +50,7 @@ class StateManager:
             "changes": [],
             "pending_status": None,
             "pending_since": None,
+            "maint_ok_count": 0,
         }
 
     def get(self, label: str) -> dict:
@@ -57,6 +58,21 @@ class StateManager:
 
     def get_all(self) -> Dict[str, dict]:
         return dict(self._state)
+
+    def inc_maint_ok_count(self, label: str) -> int:
+        """Increment consecutive OK count during maintenance and return it."""
+        current = self.get(label)
+        count = current.get("maint_ok_count", 0) + 1
+        current["maint_ok_count"] = count
+        self._state[label] = current
+        # Note: We don't save immediately here to avoid too many writes, 
+        # it's usually called inside a loop that saves state anyway.
+        return count
+
+    def reset_maint_ok_count(self, label: str):
+        """Reset consecutive OK count."""
+        if label in self._state:
+            self._state[label]["maint_ok_count"] = 0
 
     def update_soft_status(self, label: str, soft_status: Optional[str], now_iso: str):
         """Update pending soft status (for alert delay)."""

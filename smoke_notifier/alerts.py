@@ -16,7 +16,7 @@ class StatusEvaluator:
     """Evaluate link health from RRD metrics."""
 
     @staticmethod
-    def evaluate(data: Optional[dict], link_cfg: dict) -> str:
+    def evaluate(data: Optional[dict], link_cfg: dict, baseline: Optional[dict] = None) -> str:
         if data is None:
             return STATUS_DOWN
         if data.get("median_rtt") is None:
@@ -25,13 +25,24 @@ class StatusEvaluator:
         rtt  = data["median_rtt"]
         loss = data["loss_pct"]
 
-        if loss >= link_cfg.get("crit_loss", 20):
+        # Determine thresholds
+        crit_loss = link_cfg.get("crit_loss", 20)
+        warn_loss = link_cfg.get("warn_loss", 5)
+        
+        if baseline:
+            crit_rtt = baseline.get("crit_rtt", link_cfg.get("crit_rtt", 80))
+            warn_rtt = baseline.get("warn_rtt", link_cfg.get("warn_rtt", 30))
+        else:
+            crit_rtt = link_cfg.get("crit_rtt", 80)
+            warn_rtt = link_cfg.get("warn_rtt", 30)
+
+        if loss >= crit_loss:
             return STATUS_CRIT
-        if rtt >= link_cfg.get("crit_rtt", 80):
+        if rtt >= crit_rtt:
             return STATUS_CRIT
-        if loss >= link_cfg.get("warn_loss", 5):
+        if loss >= warn_loss:
             return STATUS_WARN
-        if rtt >= link_cfg.get("warn_rtt", 30):
+        if rtt >= warn_rtt:
             return STATUS_WARN
 
         jitter = data.get("jitter")
@@ -66,7 +77,7 @@ class AlertBuilder:
         return f"{total} detik"
 
     @staticmethod
-    def build_alert(link_cfg, data, status, prev_status, downtime=None):
+    def build_alert(link_cfg, data, status, prev_status, downtime=None, baseline=None):
         ts    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         emoji = STATUS_EMOJI.get(status, "⚪")
         prev_emoji = STATUS_EMOJI.get(prev_status, "⚪")
@@ -86,12 +97,22 @@ class AlertBuilder:
             rtt    = data.get("median_rtt", "N/A")
             loss   = data.get("loss_pct", "N/A")
             jitter = data.get("jitter")
+            
+            w_rtt = link_cfg.get('warn_rtt')
+            c_rtt = link_cfg.get('crit_rtt')
+            if baseline:
+                w_rtt = baseline.get('warn_rtt', w_rtt)
+                c_rtt = baseline.get('crit_rtt', c_rtt)
+
             detail = (
                 f"📊 RTT Median : <b>{rtt} ms</b>  "
-                f"(warn≥{link_cfg.get('warn_rtt')} / crit≥{link_cfg.get('crit_rtt')})\n"
+                f"(warn≥{w_rtt} / crit≥{c_rtt})\n"
                 f"📉 Packet Loss: <b>{loss}%</b>   "
                 f"(warn≥{link_cfg.get('warn_loss')}% / crit≥{link_cfg.get('crit_loss')}%)"
             )
+            if baseline:
+                detail += f"\n🤖 <i>Dynamic Baseline Active (Avg: {baseline.get('mean')} ms)</i>"
+
             if jitter is not None:
                 detail += f"\n📐 Jitter     : <b>{jitter} ms</b>"
                 wj = link_cfg.get("warn_jitter")
@@ -115,6 +136,32 @@ class AlertBuilder:
             f"🔄 Status    : {transition}\n"
             f"🕐 Waktu     : {ts}"
         )
+
+    @staticmethod
+    def build_summary_alert(alerts: List[dict]) -> str:
+        """Build a single summary message for batched alerts."""
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        count = len(alerts)
+        
+        lines = [
+            f"⚠️ <b>[MULTIPLE STATUS CHANGES]</b>",
+            f"─────────────────────",
+            f"Terdeteksi <b>{count}</b> link berubah status dalam cycle ini:",
+            ""
+        ]
+        
+        for alert in alerts:
+            label = alert["label"]
+            status = alert["status"]
+            prev_status = alert["prev_status"]
+            emoji = STATUS_EMOJI.get(status, "⚪")
+            lines.append(f"  {emoji} <code>{label}</code> : {prev_status} → <b>{status}</b>")
+            
+        lines.append("")
+        lines.append("<i>Catatan: Grafik tidak dikirim untuk mencegah spam.</i>")
+        lines.append(f"🕐 Waktu: {ts}")
+        
+        return "\n".join(lines)
 
     @staticmethod
     def build_heartbeat(states: Dict[str, dict], links: List[dict]) -> str:

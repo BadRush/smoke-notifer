@@ -253,6 +253,18 @@ class Config:
         return int(self._raw.get("alerts", {}).get("rate_limit", {}).get("max_per_minute", 20))
 
     @property
+    def batching_enabled(self) -> bool:
+        return self._raw.get("alerts", {}).get("batching", {}).get("enabled", True)
+
+    @property
+    def batching_threshold(self) -> int:
+        return int(self._raw.get("alerts", {}).get("batching", {}).get("threshold", 3))
+
+    @property
+    def dynamic_thresholds_enabled(self) -> bool:
+        return self._raw.get("alerts", {}).get("dynamic_thresholds", {}).get("enabled", True)
+
+    @property
     def heartbeat_enabled(self) -> bool:
         return self._raw.get("heartbeat", {}).get("enabled", True)
 
