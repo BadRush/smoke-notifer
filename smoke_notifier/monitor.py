@@ -149,7 +149,7 @@ class SmokePingMonitor:
         now = datetime.now()
         now_iso = now.isoformat()
         
-        baseline = self._baselines.get(label)
+        baseline = self.state.get_baseline(label)
 
         # Maintenance Check
         if self.state.is_maintenance(label):
