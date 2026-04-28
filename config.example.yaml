@@ -26,6 +26,8 @@ telegram:
   
   # ─── Command Listener (Interactive NOC) ───
   listen_commands: true             # Aktifkan fitur listener (/smoke-status, tombol inline)
+  admin_users:                      # (Opsional) User ID Telegram Anda agar BISA mengabaikan batasan thread & chat
+    # - "987654321"                 # Dapatkan User ID dari bot @userinfobot
   allowed_chat_ids:                 # (Opsional) Batasi bot HANYA merespons obrolan dari Chat ID ini.
     # - "-1001234567"               # Hindari orang luar/iseng menjalankan command bot.
     # - "123456789"

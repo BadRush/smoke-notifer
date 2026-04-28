@@ -66,17 +66,25 @@ class CommandListener(threading.Thread):
             return True
         return str(chat_id) in self._allowed_chats
 
+    def _is_admin(self, user_id: str) -> bool:
+        if not self.config.telegram_admin_users:
+            return False
+        return str(user_id) in self.config.telegram_admin_users
+
     def _handle_update(self, update: dict):
         if "message" in update and "text" in update["message"]:
             msg = update["message"]
             chat_id = str(msg["chat"]["id"])
-            if not self._is_allowed(chat_id):
+            user_id = str(msg.get("from", {}).get("id", ""))
+            is_admin = self._is_admin(user_id)
+            
+            if not is_admin and not self._is_allowed(chat_id):
                 return
                 
             thread_id = msg.get("message_thread_id")
             
             # Jika bot dikonfigurasi untuk thread tertentu, abaikan pesan dari luar thread tersebut
-            if self.config.telegram_thread_id is not None:
+            if not is_admin and self.config.telegram_thread_id is not None:
                 if thread_id != self.config.telegram_thread_id:
                     return
                     
@@ -86,7 +94,9 @@ class CommandListener(threading.Thread):
         elif "callback_query" in update:
             cb = update["callback_query"]
             chat_id = str(cb["message"]["chat"]["id"])
-            if not self._is_allowed(chat_id):
+            user_id = str(cb.get("from", {}).get("id", ""))
+            
+            if not self._is_admin(user_id) and not self._is_allowed(chat_id):
                 return
             self._handle_callback(cb)
 

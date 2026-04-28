@@ -187,6 +187,12 @@ class Config:
         return [str(chat_id) for chat_id in raw_ids]
 
     @property
+    def telegram_admin_users(self) -> List[str]:
+        raw_ids = self._raw.get("telegram", {}).get("admin_users") or []
+        # Convert to list of strings
+        return [str(uid) for uid in raw_ids]
+
+    @property
     def rrd_base_path(self) -> str:
         return self._raw.get("smokeping", {}).get("rrd_base_path", "/var/lib/smokeping")
 
