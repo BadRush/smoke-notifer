@@ -1,6 +1,6 @@
 [Unit]
 Description=smoke-notifier — SmokePing RRD Monitor / Telegram Alert
-Documentation=https://github.com/BadRush/smoke-notifier
+Documentation=https://github.com/BadRush/smoke-notifer
 After=network-online.target
 Wants=network-online.target
 StartLimitBurst=5

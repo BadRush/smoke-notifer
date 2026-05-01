@@ -44,8 +44,8 @@ ke Telegram — lengkap dengan graph PNG 3 jam terakhir.
 
 ```bash
 # 1. Clone / copy files ke VPS
-git clone https://github.com/BadRush/smoke-notifier.git
-cd smoke-notifier
+git clone https://github.com/BadRush/smoke-notifer.git
+cd smoke-notifer
 
 # 2. Jalankan installer
 sudo bash setup.sh
