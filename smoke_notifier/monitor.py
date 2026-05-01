@@ -269,19 +269,36 @@ class SmokePingMonitor:
             return
 
         # ── Queue Alert for Batching ──────────────────────────────
-        downtime = None
-        if status == STATUS_OK:
-            downtime = self.state.get_downtime(label)
-
-        msg = self.builder.build_alert(link_cfg, data, status, prev_status, downtime, baseline=baseline)
+        should_notify = True
         
-        self._cycle_alerts.append({
-            "label": label,
-            "status": status,
-            "prev_status": prev_status,
-            "msg": msg,
-            "link_cfg": link_cfg
-        })
+        # 1. Cek suppress status (e.g. jangan notif kalau cuma WARN)
+        if status.lower() in self.config.suppress_notifications_for:
+            log.info(f"  ↳ {label}: Status {status} is suppressed in config — skipping notification")
+            should_notify = False
+            
+        # 2. Cek suppress recovery (e.g. jangan notif OK kalau sebelumnya cuma WARN)
+        if status == STATUS_OK and prev_status.lower() in self.config.suppress_recovery_from:
+            log.info(f"  ↳ {label}: Recovery from {prev_status} is suppressed — skipping notification")
+            should_notify = False
+
+        # 3. Cek jika status sebelumnya di-suppress, maka recovery juga jangan di-notif
+        if status == STATUS_OK and prev_status.lower() in self.config.suppress_notifications_for:
+            should_notify = False
+
+        if should_notify:
+            downtime = None
+            if status == STATUS_OK:
+                downtime = self.state.get_downtime(label)
+
+            msg = self.builder.build_alert(link_cfg, data, status, prev_status, downtime, baseline=baseline)
+            
+            self._cycle_alerts.append({
+                "label": label,
+                "status": status,
+                "prev_status": prev_status,
+                "msg": msg,
+                "link_cfg": link_cfg
+            })
 
         self.state.update(label, status, now_iso)
 

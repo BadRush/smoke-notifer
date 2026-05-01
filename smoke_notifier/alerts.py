@@ -89,6 +89,9 @@ class AlertBuilder:
         else:
             header = f"{emoji} <b>[{status}] {label}</b>"
 
+        def pad(text, length=12):
+            return text.ljust(length)
+
         if status == STATUS_DOWN:
             detail = "❌ Tidak ada data — link down / RRD kosong"
         elif status == STATUS_FLAPPING:
@@ -105,27 +108,23 @@ class AlertBuilder:
                 c_rtt = baseline.get('crit_rtt', c_rtt)
 
             detail = (
-                f"📊 RTT Median : <b>{rtt} ms</b>  "
-                f"(warn≥{w_rtt} / crit≥{c_rtt})\n"
-                f"📉 Packet Loss: <b>{loss}%</b>   "
-                f"(warn≥{link_cfg.get('warn_loss')}% / crit≥{link_cfg.get('crit_loss')}%)"
+                f"📊 <code>{pad('RTT Median')} :</code> <b>{rtt} ms</b> (w:{w_rtt}/c:{c_rtt})\n"
+                f"📉 <code>{pad('Packet Loss')} :</code> <b>{loss}%</b> (w:{link_cfg.get('warn_loss')}/c:{link_cfg.get('crit_loss')})"
             )
             if baseline:
                 detail += f"\n🤖 <i>Dynamic Baseline Active (Avg: {baseline.get('mean')} ms)</i>"
 
             if jitter is not None:
-                detail += f"\n📐 Jitter     : <b>{jitter} ms</b>"
                 wj = link_cfg.get("warn_jitter")
                 cj = link_cfg.get("crit_jitter")
-                if wj or cj:
-                    detail += f"  (warn≥{wj or '-'} / crit≥{cj or '-'})"
+                detail += f"\n📐 <code>{pad('Jitter')} :</code> <b>{jitter} ms</b> (w:{wj or '-'}/c:{cj or '-'})"
         else:
             detail = "⚠️ Data tidak tersedia"
 
         downtime_line = ""
         if downtime and status == STATUS_OK:
             dur = AlertBuilder._format_duration(downtime)
-            downtime_line = f"\n⏱️ Durasi     : <b>{dur}</b>"
+            downtime_line = f"\n⏱️ <code>{pad('Durasi')} :</code> <b>{dur}</b>"
 
         transition = f"{prev_emoji}{prev_status} → {emoji}{status}"
 
@@ -133,8 +132,8 @@ class AlertBuilder:
             f"{header}\n"
             f"─────────────────────\n"
             f"{detail}{downtime_line}\n"
-            f"🔄 Status    : {transition}\n"
-            f"🕐 Waktu     : {ts}"
+            f"🔄 <code>{pad('Status')} :</code> {transition}\n"
+            f"🕐 <code>{pad('Waktu')} :</code> {ts}"
         )
 
     @staticmethod

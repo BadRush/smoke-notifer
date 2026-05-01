@@ -253,6 +253,18 @@ class Config:
         return int(self._raw.get("alerts", {}).get("rate_limit", {}).get("max_per_minute", 20))
 
     @property
+    def suppress_recovery_from(self) -> List[str]:
+        """Statuses that should NOT trigger a recovery alert (e.g. ['warn'])."""
+        raw = self._raw.get("alerts", {}).get("suppress_recovery_from", [])
+        return [s.lower() for s in raw]
+
+    @property
+    def suppress_notifications_for(self) -> List[str]:
+        """Statuses that should NOT trigger any notification (e.g. ['warn'])."""
+        raw = self._raw.get("alerts", {}).get("suppress_notifications_for", [])
+        return [s.lower() for s in raw]
+
+    @property
     def batching_enabled(self) -> bool:
         return self._raw.get("alerts", {}).get("batching", {}).get("enabled", True)
 

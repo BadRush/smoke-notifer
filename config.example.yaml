@@ -62,6 +62,12 @@ alerts:
 
   rate_limit:
     max_per_minute: 20    # max pesan Telegram per menit
+  
+  # ─── Noise Reduction (Anti-Spam) ───
+  # Gunakan ini untuk mengurangi notifikasi yang terlalu sering/berisik.
+  # Pilihan status: warn, crit, down, flapping
+  suppress_notifications_for: []   # Contoh: ["warn"] -> abaikan semua notif WARN
+  suppress_recovery_from: ["warn"] # Contoh: ["warn"] -> jangan kirim notif RECOVERED jika sebelumnya cuma WARN
 
 # ─── Daily Heartbeat ─────────────────────────────────────────────
 # Summary harian agar tahu monitor masih hidup
