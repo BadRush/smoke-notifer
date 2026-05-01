@@ -59,7 +59,7 @@ class TelegramNotifier:
         chat_id: Optional[str] = None,
         thread_id: Optional[int] = None,
         reply_markup: Optional[dict] = None
-    ) -> bool:
+    ) -> Optional[int]:
         if not self._rate_ok():
             log.warning("Telegram rate limit hit — message queued/skipped")
             return False
@@ -90,7 +90,7 @@ class TelegramNotifier:
                 r.raise_for_status()
                 self._record()
                 log.info("Telegram message sent")
-                return True
+                return r.json().get("result", {}).get("message_id")
             except Exception as e:
                 delay = 2 ** attempt
                 log.warning(
@@ -100,7 +100,7 @@ class TelegramNotifier:
                     time.sleep(delay)
 
         log.error("Telegram send_message failed after all retries")
-        return False
+        return None
 
     def send_photo(
         self,
@@ -109,7 +109,7 @@ class TelegramNotifier:
         chat_id: Optional[str] = None,
         thread_id: Optional[int] = None,
         reply_markup: Optional[dict] = None
-    ) -> bool:
+    ) -> Optional[int]:
         if not self._rate_ok():
             log.warning("Telegram rate limit hit — photo skipped")
             return False
@@ -145,7 +145,7 @@ class TelegramNotifier:
                 r.raise_for_status()
                 self._record()
                 log.info("Telegram photo sent")
-                return True
+                return r.json().get("result", {}).get("message_id")
             except Exception as e:
                 delay = 2 ** attempt
                 log.warning(
@@ -164,7 +164,7 @@ class TelegramNotifier:
         chat_id: Optional[str] = None,
         thread_id: Optional[int] = None,
         reply_markup: Optional[dict] = None
-    ) -> bool:
+    ) -> Optional[int]:
         """Send alert: photo+caption if graph available, text otherwise."""
         if graph_path and os.path.isfile(graph_path):
             return self.send_photo(
@@ -180,6 +180,23 @@ class TelegramNotifier:
             thread_id=thread_id,
             reply_markup=reply_markup
         )
+
+    def clear_reply_markup(self, chat_id: str, message_id: int) -> bool:
+        """Remove inline buttons from a previously sent message."""
+        try:
+            r = requests.post(
+                f"{self._base_url}/editMessageReplyMarkup",
+                json={
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "reply_markup": {"inline_keyboard": []}
+                },
+                timeout=10
+            )
+            return r.status_code == 200
+        except Exception as e:
+            log.warning(f"Failed to clear buttons for message {message_id}: {e}")
+            return False
 
     def test_connection(self) -> bool:
         """Verify bot token is valid."""

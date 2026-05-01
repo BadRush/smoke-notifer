@@ -104,10 +104,17 @@ class SmokePingMonitor:
 
         baseline = self.state.get_baseline(link_cfg["label"])
         graph_path = self.grapher.generate(link_cfg, baseline=baseline)
-        self.notifier.send_alert(
+        
+        msg_id = self.notifier.send_alert(
             msg, graph_path, chat_id=chat_id,
             thread_id=thread_id, reply_markup=reply_markup
         )
+        
+        # Record the message ID so we can clear buttons later
+        if msg_id:
+            target_chat = chat_id or self.notifier.chat_id
+            self.state.record_alert_message(link_cfg["label"], target_chat, msg_id)
+
         if graph_path:
             self.grapher.cleanup(graph_path)
 
@@ -299,6 +306,18 @@ class SmokePingMonitor:
                 "msg": msg,
                 "link_cfg": link_cfg
             })
+
+        # ── Cleanup Buttons on Recovery ───────────────────────────
+        if status == STATUS_OK:
+            last_msg = self.state.get_last_alert_message(label)
+            if last_msg:
+                # Clear buttons in background
+                self.executor.submit(
+                    self.notifier.clear_reply_markup, 
+                    last_msg["chat_id"], 
+                    last_msg["message_id"]
+                )
+                self.state.clear_last_alert_message(label)
 
         self.state.update(label, status, now_iso)
 

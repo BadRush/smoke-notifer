@@ -51,6 +51,7 @@ class StateManager:
             "pending_status": None,
             "pending_since": None,
             "maint_ok_count": 0,
+            "last_msg": None, # {chat_id: str, message_id: int}
         }
 
     def get(self, label: str) -> dict:
@@ -123,6 +124,22 @@ class StateManager:
     def record_alert(self, label: str, now_iso: str):
         if label in self._state:
             self._state[label]["last_alert"] = now_iso
+            self.save()
+
+    def record_alert_message(self, label: str, chat_id: str, message_id: int):
+        """Store the ID of the last sent alert message to allow clearing buttons later."""
+        if label in self._state:
+            self._state[label]["last_msg"] = {"chat_id": chat_id, "message_id": message_id}
+            self.save()
+
+    def get_last_alert_message(self, label: str) -> Optional[dict]:
+        """Get the chat_id and message_id of the last sent alert."""
+        return self.get(label).get("last_msg")
+
+    def clear_last_alert_message(self, label: str):
+        """Clear the stored alert message ID."""
+        if label in self._state:
+            self._state[label]["last_msg"] = None
             self.save()
 
     # ── Flapping & Cooldown ───────────────────────────────────────
