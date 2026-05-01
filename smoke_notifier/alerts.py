@@ -108,16 +108,13 @@ class AlertBuilder:
                 c_rtt = baseline.get('crit_rtt', c_rtt)
 
             detail = (
-                f"📊 <code>{pad('RTT Median')} :</code> <b>{rtt} ms</b> (w:{w_rtt}/c:{c_rtt})\n"
-                f"📉 <code>{pad('Packet Loss')} :</code> <b>{loss}%</b> (w:{link_cfg.get('warn_loss')}/c:{link_cfg.get('crit_loss')})"
+                f"📊 <code>{pad('RTT Median')} :</code> <b>{rtt} ms</b> <i>(warn: {w_rtt}, crit: {c_rtt})</i>\n"
+                f"📉 <code>{pad('Packet Loss')} :</code> <b>{loss}%</b> <i>(warn: {link_cfg.get('warn_loss')}, crit: {link_cfg.get('crit_loss')})</i>"
             )
             if baseline:
                 detail += f"\n🤖 <i>Dynamic Baseline Active (Avg: {baseline.get('mean')} ms)</i>"
 
-            if jitter is not None:
-                wj = link_cfg.get("warn_jitter")
-                cj = link_cfg.get("crit_jitter")
-                detail += f"\n📐 <code>{pad('Jitter')} :</code> <b>{jitter} ms</b> (w:{wj or '-'}/c:{cj or '-'})"
+                detail += f"\n📐 <code>{pad('Jitter')} :</code> <b>{jitter} ms</b>"
         else:
             detail = "⚠️ Data tidak tersedia"
 
